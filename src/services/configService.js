@@ -132,23 +132,38 @@ export const DEFAULT_DOCUMENTO_TIPOS = [
   'Outro',
 ]
 
+/** Status de documento SST padrão (config/documentos.status). */
+export const DEFAULT_DOCUMENTO_STATUSES = [
+  'VIGENTE',
+  'VENCIDO',
+  'ARQUIVADO',
+  'EM_ANALISE',
+]
+
 /**
- * Lê o documento config/documentos, retornando a lista de tipos
- * com fallback para os valores padrão caso não exista.
- * @returns {Promise<string[]>}
+ * Lê o documento config/documentos, retornando a lista de tipos e
+ * status com fallback para os valores padrão caso não exista.
+ * @returns {Promise<{tipos: string[], status: string[]}>}
  */
 export async function getConfigDocumentos() {
-  if (!isFirebaseConfigured || !db) return DEFAULT_DOCUMENTO_TIPOS
+  if (!isFirebaseConfigured || !db) {
+    return { tipos: DEFAULT_DOCUMENTO_TIPOS, status: DEFAULT_DOCUMENTO_STATUSES }
+  }
 
   try {
     const snap = await getDoc(doc(db, COLLECTIONS.CONFIG, CONFIG_DOCS.DOCUMENTOS))
-    if (!snap.exists()) return DEFAULT_DOCUMENTO_TIPOS
+    if (!snap.exists()) {
+      return { tipos: DEFAULT_DOCUMENTO_TIPOS, status: DEFAULT_DOCUMENTO_STATUSES }
+    }
 
     const d = snap.data()
-    return d.tipos?.length ? d.tipos : DEFAULT_DOCUMENTO_TIPOS
+    return {
+      tipos: d.tipos?.length ? d.tipos : DEFAULT_DOCUMENTO_TIPOS,
+      status: d.status?.length ? d.status : DEFAULT_DOCUMENTO_STATUSES,
+    }
   } catch (err) {
     console.warn('[config] Não foi possível ler config/documentos:', err)
-    return DEFAULT_DOCUMENTO_TIPOS
+    return { tipos: DEFAULT_DOCUMENTO_TIPOS, status: DEFAULT_DOCUMENTO_STATUSES }
   }
 }
 
@@ -170,7 +185,7 @@ export async function seedDefaultConfig() {
   )
   await setDoc(
     doc(db, COLLECTIONS.CONFIG, CONFIG_DOCS.DOCUMENTOS),
-    { tipos: DEFAULT_DOCUMENTO_TIPOS, _atualizadoEm: 'manual-seed' },
+    { tipos: DEFAULT_DOCUMENTO_TIPOS, status: DEFAULT_DOCUMENTO_STATUSES, _atualizadoEm: 'manual-seed' },
     { merge: true }
   )
 }

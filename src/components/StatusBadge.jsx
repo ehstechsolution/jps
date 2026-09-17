@@ -13,6 +13,7 @@ import { statusLabel } from '@/utils/sst'
 const STYLES = {
   // Grupo verde
   VALIDO: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400 ring-emerald-600/20',
+  VIGENTE: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400 ring-emerald-600/20',
   ATIVO: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400 ring-emerald-600/20',
   Ativo: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400 ring-emerald-600/20',
   'DISPONIVEL': 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400 ring-emerald-600/20',
@@ -21,6 +22,7 @@ const STYLES = {
 
   // Grupo amarelo
   PROXIMO_VENCIMENTO: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400 ring-amber-600/20',
+  EM_ANALISE: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400 ring-amber-600/20',
   EM_ANDAMENTO: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400 ring-amber-600/20',
   APROVADO: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400 ring-amber-600/20',
   MANUTENCAO: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400 ring-amber-600/20',
@@ -37,6 +39,7 @@ const STYLES = {
   EM_USO: 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-400 ring-sky-600/20',
   Férias: 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-400 ring-sky-600/20',
   INATIVO: 'bg-slate-200 text-slate-700 dark:bg-slate-700/30 dark:text-slate-300 ring-slate-600/20',
+  ARQUIVADO: 'bg-slate-200 text-slate-700 dark:bg-slate-700/30 dark:text-slate-300 ring-slate-600/20',
 }
 
 /**

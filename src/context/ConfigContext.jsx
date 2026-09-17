@@ -3,12 +3,13 @@
 // ------------------------------------------------------------------
 // Carrega as configurações globais da JPS Steel uma única vez e
 // disponibiliza para toda a aplicação:
-//   - configLists       -> escolaridade / cargo / status (com fallback)
-//   - configDocumentos  -> tipos de documento SST (com fallback)
-//   - empresaLogo       -> URL da logo em config/empresa (fallback: asset local)
-//   - empresaWebhook    -> URL do webhook configurada
-//   - seedConfig()      -> grava as listas padrão (seed inicial)
-//   - reloadConfig()    -> recarrega todas as configs do Firestore
+//   - configLists                -> escolaridade / cargo / status (com fallback)
+//   - configDocumentos           -> tipos de documento SST (com fallback)
+//   - configDocumentosStatuses   -> status de documento SST (com fallback)
+//   - empresaLogo                -> URL da logo em config/empresa (fallback: asset local)
+//   - empresaWebhook             -> URL do webhook configurada
+//   - seedConfig()               -> grava as listas padrão (seed inicial)
+//   - reloadConfig()             -> recarrega todas as configs do Firestore
 // ------------------------------------------------------------------
 import { createContext, useContext, useEffect, useCallback, useState } from 'react'
 import {
@@ -18,11 +19,13 @@ import {
   seedDefaultConfig,
   DEFAULT_CONFIG_LISTS,
   DEFAULT_DOCUMENTO_TIPOS,
+  DEFAULT_DOCUMENTO_STATUSES,
 } from '@/services/configService'
 
 const ConfigContext = createContext({
   configLists: DEFAULT_CONFIG_LISTS,
   configDocumentos: DEFAULT_DOCUMENTO_TIPOS,
+  configDocumentosStatuses: DEFAULT_DOCUMENTO_STATUSES,
   empresaLogo: '',
   empresaWebhook: '',
   configLoading: true,
@@ -34,6 +37,7 @@ const ConfigContext = createContext({
 export function ConfigProvider({ children }) {
   const [configLists, setConfigLists] = useState(DEFAULT_CONFIG_LISTS)
   const [configDocumentos, setConfigDocumentos] = useState(DEFAULT_DOCUMENTO_TIPOS)
+  const [configDocumentosStatuses, setConfigDocumentosStatuses] = useState(DEFAULT_DOCUMENTO_STATUSES)
   const [empresaLogo, setEmpresaLogo] = useState('')
   const [empresaWebhook, setEmpresaWebhook] = useState('')
   const [configLoading, setConfigLoading] = useState(true)
@@ -41,13 +45,14 @@ export function ConfigProvider({ children }) {
 
   const load = useCallback(async () => {
     setConfigLoading(true)
-    const [lists, tipos, empresa] = await Promise.all([
+    const [lists, docCfg, empresa] = await Promise.all([
       getConfigFuncionarios(),
       getConfigDocumentos(),
       getEmpresaConfig(),
     ])
     setConfigLists(lists)
-    setConfigDocumentos(tipos)
+    setConfigDocumentos(docCfg.tipos)
+    setConfigDocumentosStatuses(docCfg.status)
     setEmpresaLogo(empresa.logo)
     setEmpresaWebhook(empresa.webhook)
     setSeeded(true)
@@ -66,7 +71,7 @@ export function ConfigProvider({ children }) {
 
   return (
     <ConfigContext.Provider
-      value={{ configLists, configDocumentos, empresaLogo, empresaWebhook, configLoading, seeded, seedConfig, reloadConfig: load }}
+      value={{ configLists, configDocumentos, configDocumentosStatuses, empresaLogo, empresaWebhook, configLoading, seeded, seedConfig, reloadConfig: load }}
     >
       {children}
     </ConfigContext.Provider>

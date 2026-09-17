@@ -17,8 +17,10 @@ import Dashboard from '@/pages/Dashboard'
 import FuncionariosPage from '@/pages/FuncionariosPage'
 import DocumentosPage from '@/pages/DocumentosPage'
 import PlaceholderPage from '@/pages/PlaceholderPage'
-import DocumentoNovoPage from '@/pages/DocumentoNovoPage'
+import DocumentoFormularioPage from '@/pages/DocumentoFormularioPage'
 import DocumentoEditarPage from '@/pages/DocumentoEditarPage'
+import DocumentoImagemPage from '@/pages/DocumentoImagemPage'
+import DocumentoWordPage from '@/pages/DocumentoWordPage'
 import { useCollection } from '@/hooks/useCollection'
 
 /** Páginas disponíveis e seus componentes. */
@@ -71,29 +73,40 @@ function Shell() {
   const [activePage, setActivePage] = useState('dashboard')
   const [menuOpen, setMenuOpen] = useState(false)
   const [docView, setDocView] = useState(null)
+  const [documentoFiltro, setDocumentoFiltro] = useState(null)
   const { data: funcionarios } = useCollection('funcionarios')
 
   const handleNavigate = (key) => {
     setActivePage(PAGES[key] ? key : 'dashboard')
     setDocView(null) // sai das views dedicadas de documentos ao navegar
+    setDocumentoFiltro(null) // limpa o filtro de funcionário ao navegar
     setMenuOpen(false) // fecha o drawer no mobile após navegar
+  }
+
+  // Abre a página de Documentos já filtrada pelo funcionário selecionado
+  const handleOpenDocumentosFuncionario = (funcionarioId) => {
+    setActivePage('documentos')
+    setDocView(null)
+    setDocumentoFiltro(funcionarioId)
+    setMenuOpen(false)
   }
 
   const PageComponent = PAGES[activePage] ?? PAGES.dashboard
 
   /**
-   * Views dedicadas de documentos (novo / carimbar PDF) — renderizadas no
-   * lugar da página ativa, sem mudar de módulo.
+   * Views dedicadas de documentos (novo/editar/carimbar PDF) — renderizadas
+   * no lugar da página ativa, sem mudar de módulo.
    */
-  if (docView?.kind === 'novo') {
+  if (docView?.kind === 'novo' || docView?.kind === 'editar') {
     return (
       <div className="min-h-screen flex bg-slate-100 dark:bg-graphite-900">
         <Sidebar activePage="documentos" onNavigate={handleNavigate} onClose={() => setMenuOpen(false)} open={menuOpen} />
         <main className="flex-1 min-w-0">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-            <DocumentoNovoPage
+            <DocumentoFormularioPage
               funcionarioId={docView.funcionarioId}
               funcionarios={funcionarios ?? []}
+              documento={docView.kind === 'editar' ? docView.doc : null}
               onBack={() => setDocView(null)}
             />
           </div>
@@ -109,6 +122,32 @@ function Shell() {
         <main className="flex-1 min-w-0">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
             <DocumentoEditarPage doc={docView.doc} onBack={() => setDocView(null)} />
+          </div>
+        </main>
+      </div>
+    )
+  }
+
+  if (docView?.kind === 'editar-imagem') {
+    return (
+      <div className="min-h-screen flex bg-slate-100 dark:bg-graphite-900">
+        <Sidebar activePage="documentos" onNavigate={handleNavigate} onClose={() => setMenuOpen(false)} open={menuOpen} />
+        <main className="flex-1 min-w-0">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <DocumentoImagemPage doc={docView.doc} onBack={() => setDocView(null)} />
+          </div>
+        </main>
+      </div>
+    )
+  }
+
+  if (docView?.kind === 'editar-word') {
+    return (
+      <div className="min-h-screen flex bg-slate-100 dark:bg-graphite-900">
+        <Sidebar activePage="documentos" onNavigate={handleNavigate} onClose={() => setMenuOpen(false)} open={menuOpen} />
+        <main className="flex-1 min-w-0">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <DocumentoWordPage doc={docView.doc} onBack={() => setDocView(null)} />
           </div>
         </main>
       </div>
@@ -132,8 +171,13 @@ function Shell() {
             page={activePage}
             onOpenMenu={() => setMenuOpen(true)}
             onNavigate={handleNavigate}
+            onOpenDocumentosFuncionario={handleOpenDocumentosFuncionario}
+            documentoFiltro={documentoFiltro}
             onOpenDocumentoNovo={(funcionarioId) => setDocView({ kind: 'novo', funcionarioId })}
+            onOpenDocumentoEditar={(doc) => setDocView({ kind: 'editar', doc })}
             onOpenDocumentoPdf={(doc) => setDocView({ kind: 'editar-pdf', doc })}
+            onOpenDocumentoImagem={(doc) => setDocView({ kind: 'editar-imagem', doc })}
+            onOpenDocumentoWord={(doc) => setDocView({ kind: 'editar-word', doc })}
           />
         </div>
       </main>

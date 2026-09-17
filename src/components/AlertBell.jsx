@@ -112,12 +112,14 @@ function AlertGroup({ titulo, icon, iconClass, itens, onSelect }) {
           <li key={alerta.id}>
             <button onClick={onSelect} className="w-full text-left group">
               <p className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">
-                {alerta.funcionario_nome} · {alerta.tipo}
+                {alerta.funcionario_nome} · {alerta.tipoDocumento ?? alerta.tipo}
               </p>
               <p className={`text-xs ${alerta.critico ? 'text-red-500' : 'text-amber-600 dark:text-amber-400'}`}>
-                {alerta.dias < 0
-                  ? `Vencido há ${Math.abs(alerta.dias)} dia${Math.abs(alerta.dias) === 1 ? '' : 's'} (${formatDate(alerta.data_validade)})`
-                  : alternativa(alerta.dias)}
+                {alerta.dias == null
+                  ? 'Sem data de validade'
+                  : alerta.dias < 0
+                    ? `Vencido há ${Math.abs(alerta.dias)} dia${Math.abs(alerta.dias) === 1 ? '' : 's'} (${formatDate(alerta.dataValidade ?? alerta.data_validade)})`
+                    : alternativa(alerta.dias)}
               </p>
             </button>
           </li>

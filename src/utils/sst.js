@@ -59,9 +59,14 @@ export function isCriticalDocument(dataValidade, hoje = new Date()) {
  */
 export function statusLabel(status) {
   const labels = {
+    // Status de documento SST (novo schema manual)
+    VIGENTE: 'Vigente',
+    VENCIDO: 'Vencido',
+    ARQUIVADO: 'Arquivado',
+    EM_ANALISE: 'Em análise',
+    // Grupo de validade (legado / cálculo automático)
     VALIDO: 'Válido',
     PROXIMO_VENCIMENTO: 'Próximo vencimento',
-    VENCIDO: 'Vencido',
     PENDENTE: 'Pendente',
     APROVADO: 'Aprovado',
     EM_ANDAMENTO: 'Em andamento',

@@ -46,12 +46,12 @@ export default function Dashboard({ onOpenMenu, onNavigate }) {
   const metrics = useDashboardMetrics(data)
   const { theme } = useTheme()
 
-  // ---------- Derivados: vencimentos de SST ordenados por criticidade ------
+  // ---------- Derivados: documentos SST ordenados por status/de validade ------
   const sstDocuments = useMemo(() => {
     const docs = [...(data.documentos_sst ?? [])]
-    const order = { VENCIDO: 0, PROXIMO_VENCIMENTO: 1, VALIDO: 2 }
+    const order = { VENCIDO: 0, EM_ANALISE: 1, VIGENTE: 2, ARQUIVADO: 3 }
     return docs.sort((a, b) => {
-      const crit = (order[a.status_calculado] ?? 3) - (order[b.status_calculado] ?? 3)
+      const crit = (order[a.status] ?? 3) - (order[b.status] ?? 3)
       if (crit !== 0) return crit
       const da = a.data_validade_date?.getTime() ?? Infinity
       const db = b.data_validade_date?.getTime() ?? Infinity
@@ -156,7 +156,7 @@ export default function Dashboard({ onOpenMenu, onNavigate }) {
           iconClass={metrics.documentosCriticos > 0 ? 'bg-red-500' : 'bg-emerald-500'}
           label="Alertas Críticos de SST"
           value={metrics.documentosCriticos}
-          hint="Documentos a vencer < 30 dias"
+          hint="Vencidos ou em análise"
           onClick={() => onNavigate('funcionarios')}
         />
       </section>
@@ -168,7 +168,7 @@ export default function Dashboard({ onOpenMenu, onNavigate }) {
         <div className="flex items-center justify-between gap-3 px-5 pt-5 pb-3">
           <div>
             <h2 className="font-bold text-slate-900 dark:text-white">Próximos Vencimentos de SST</h2>
-            <p className="text-xs text-slate-400">Documentos válidos, a vencer e vencidos dos funcionários</p>
+            <p className="text-xs text-slate-400">Documentos dos funcionários, ordenados por status e validade</p>
           </div>
         </div>
 
@@ -188,7 +188,7 @@ export default function Dashboard({ onOpenMenu, onNavigate }) {
               </thead>
               <tbody>
                 {sstDocuments.slice(0, 8).map((doc) => {
-                  const days = diffInDays(doc.data_validade)
+                  const days = diffInDays(doc.dataValidade)
                   return (
                     <tr key={doc.id}>
                       <td>
@@ -197,11 +197,11 @@ export default function Dashboard({ onOpenMenu, onNavigate }) {
                       </td>
                       <td>
                         <span className="inline-flex rounded-lg bg-slate-100 dark:bg-graphite-800 px-2 py-1 text-xs font-bold text-slate-700 dark:text-slate-200">
-                          {doc.tipo}
+                          {doc.tipoDocumento}
                         </span>
                       </td>
                       <td className="text-slate-600 dark:text-slate-300 whitespace-nowrap">
-                        {formatDate(doc.data_validade)}
+                        {formatDate(doc.dataValidade)}
                       </td>
                       <td className="whitespace-nowrap">
                         {days === null
@@ -213,7 +213,7 @@ export default function Dashboard({ onOpenMenu, onNavigate }) {
                               : `Vence em ${days} dias`}
                       </td>
                       <td>
-                        <StatusBadge status={doc.status_calculado} />
+                        <StatusBadge status={doc.status} />
                       </td>
                     </tr>
                   )

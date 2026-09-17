@@ -11,9 +11,12 @@
 //   {
 //     evento: 'criado' | 'atualizado' | 'excluido',
 //     documento: {
-//       id, id_funcionario, funcionario_nome, tipo, descricao,
-//       data_emissao, data_validade, observacoes, url_arquivo,
-//       arquivo_nome, arquivo_base64
+//       id, idDocumento, idFuncionarioTitular, nomeFuncionarioTitular,
+//       emailTitular, tipoDocumento, descricao, dataEmissao, dataValidade,
+//       status, resultado, observacao, arquivoUrl, arquivoNome,
+//       criadoPor, arquivo_base64,
+//       // aliases legados (compatibilidade com integrações antigas):
+//       id_funcionario, funcionario_nome, tipo, url_arquivo, arquivo_nome
 //     },
 //     enviadoEm: 'ISO...'
 //   }
@@ -93,22 +96,37 @@ export async function notifyDocumentEvent(evento, funcionarioId, doc) {
   }
 
   // Tenta incluir o arquivo em base64; em falha, envia apenas a URL.
-  const arquivo_base64 = doc.url_arquivo ? await fetchAsBase64(doc.url_arquivo) : null
+  const arquivo_base64 = (doc.arquivoUrl ?? doc.url_arquivo) ? await fetchAsBase64(doc.arquivoUrl ?? doc.url_arquivo) : null
 
   const payload = {
     evento,
     documento: {
-      id: doc.id ?? '',
+      id: doc.id ?? (doc.idDocumento ?? ''),
+      // Formato novo
+      idDocumento: doc.idDocumento ?? doc.id ?? '',
+      idFuncionarioTitular: funcionarioId ?? '',
+      nomeFuncionarioTitular: doc.nomeFuncionarioTitular ?? funcionarioNome,
+      emailTitular: doc.emailTitular ?? '',
+      tipoDocumento: doc.tipoDocumento ?? '',
+      descricao: doc.descricao ?? '',
+      dataEmissao: doc.dataEmissao ?? '',
+      dataValidade: doc.dataValidade ?? '',
+      status: doc.status ?? '',
+      resultado: doc.resultado ?? '',
+      observacao: doc.observacao ?? '',
+      arquivoUrl: doc.arquivoUrl ?? '',
+      arquivoNome: doc.arquivoNome ?? '',
+      criadoPor: doc.criadoPor ?? '',
+      arquivo_base64,
+      // Aliases legados (compatibilidade com integrações antigas)
       id_funcionario: funcionarioId,
       funcionario_nome: funcionarioNome,
-      tipo: doc.tipo ?? '',
-      descricao: doc.descricao ?? '',
-      data_emissao: doc.data_emissao ?? '',
-      data_validade: doc.data_validade ?? '',
-      observacoes: doc.observacoes ?? '',
-      url_arquivo: doc.url_arquivo ?? '',
-      arquivo_nome: doc.arquivo_nome ?? '',
-      arquivo_base64,
+      tipo: doc.tipoDocumento ?? '',
+      url_arquivo: doc.arquivoUrl ?? '',
+      arquivo_nome: doc.arquivoNome ?? '',
+      observacoes: doc.observacao ?? '',
+      data_emissao: doc.dataEmissao ?? '',
+      data_validade: doc.dataValidade ?? '',
     },
     enviadoEm: new Date().toISOString(),
   }

@@ -1,7 +1,7 @@
 // ------------------------------------------------------------------
 // src/pages/DocumentoEditarPage.jsx
 // ------------------------------------------------------------------
-// Página dedicada para carimbar/assinar um PDF existente. Abre o editor,
+// Página dedicada para editar/assinar um PDF existente. Abre o editor,
 // e ao salvar envia o novo arquivo ao Cloudinary e atualiza o registro
 // do documento (sem alterar o arquivo original).
 // ------------------------------------------------------------------
@@ -13,7 +13,7 @@ import { updateDocumento } from '@/services/documentoService'
 
 /**
  * @param {object} props
- * @param {object} props.doc      Documento em edição (com parentId)
+ * @param {object} props.doc      Documento em edição (com idFuncionarioTitular)
  * @param {Function} props.onBack
  */
 export default function DocumentoEditarPage({ doc, onBack }) {
@@ -24,10 +24,23 @@ export default function DocumentoEditarPage({ doc, onBack }) {
     setErro('')
     try {
       const url = await uploadDocument(file, 'documentos')
-      await updateDocumento(doc.parentId ?? doc.id_funcionario ?? '', doc.id, {
-        url_arquivo: url,
-        arquivo_nome: file.name,
-      })
+      const titularId = doc.idFuncionarioTitular ?? doc.id_funcionario ?? ''
+      const payload = {
+        funcionarioId: titularId,
+        nomeFuncionarioTitular: doc.nomeFuncionarioTitular ?? '',
+        emailTitular: doc.emailTitular ?? '',
+        tipoDocumento: doc.tipoDocumento ?? doc.tipo ?? '',
+        descricao: doc.descricao ?? '',
+        dataEmissao: doc.dataEmissao ?? doc.data_emissao ?? '',
+        dataValidade: doc.dataValidade ?? doc.data_validade ?? '',
+        semValidade: !(doc.dataValidade ?? doc.data_validade),
+        status: doc.status ?? '',
+        resultado: doc.resultado ?? '',
+        observacao: doc.observacao ?? doc.observacoes ?? '',
+        arquivoUrl: url,
+        arquivoNome: file.name,
+      }
+      await updateDocumento(titularId, doc.id, payload)
       setSalvo(true)
       setTimeout(() => onBack(), 800)
     } catch (err) {
@@ -35,7 +48,7 @@ export default function DocumentoEditarPage({ doc, onBack }) {
     }
   }
 
-  if (!doc?.url_arquivo.toLowerCase().match(/\.pdf$/)) {
+  if (!String(doc?.arquivoUrl ?? doc?.url_arquivo ?? '').toLowerCase().match(/\.pdf/)) {
     return (
       <div className="card p-8 text-center">
         <FileText className="mx-auto mb-2" size={28} />
@@ -52,9 +65,9 @@ export default function DocumentoEditarPage({ doc, onBack }) {
           <FileSignature size={22} />
         </span>
         <div>
-          <h1 className="text-xl font-bold text-slate-900 dark:text-white">Carimbar / Assinar PDF</h1>
+          <h1 className="text-xl font-bold text-slate-900 dark:text-white">Editar no PDF</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            {doc.descricao || doc.tipo} — {doc.arquivo_nome}
+            {doc.descricao || doc.tipoDocumento || doc.tipo} — {doc.arquivoNome || doc.arquivo_nome}
           </p>
         </div>
       </div>
@@ -72,9 +85,9 @@ export default function DocumentoEditarPage({ doc, onBack }) {
         </div>
       )}
 
-      <PdfEditor
-        src={doc.url_arquivo}
-        arquivoNome={doc.arquivo_nome}
+<PdfEditor
+        src={doc.arquivoUrl ?? doc.url_arquivo}
+        arquivoNome={doc.arquivoNome ?? doc.arquivo_nome}
         onCancel={onBack}
         onSave={handleSave}
       />

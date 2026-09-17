@@ -2,10 +2,8 @@
 // src/hooks/useDocumentos.js
 // ------------------------------------------------------------------
 // Hooks de documentos SST:
-//   - useDocumentos()            Lista global (todos os funcionários),
-//                                com join do dono e status recalculado.
-//   - useDocumentosFuncionario() Documentos de um único funcionário em
-//                                tempo real (subcoleção).
+//   - useDocumentos()            Lista global (coleção plana "documentos"),
+//                                com join do titular montado em memória.
 //
 // Comportamento igual ao restante do app:
 //  - Firebase configurado -> dados reais (real-time);
@@ -13,31 +11,25 @@
 // ------------------------------------------------------------------
 import { useEffect, useState, useCallback } from 'react'
 import { isFirebaseConfigured } from '@/config/firebase'
-import {
-  subscribeCollection,
-  subscribeSubcollection,
-  fetchSubcollection,
-  COLLECTIONS,
-} from '@/services/firestore'
+import { subscribeCollection, COLLECTIONS } from '@/services/firestore'
 import { fetchMockDashboardData } from '@/services/mockData'
-import { getDocumentStatus } from '@/utils/sst'
 import { normalizeDate } from '@/utils/format'
 
 /**
- * Enriquece um documento SST bruto com o dono (funcionário) e recalcula
- * status/vencimento em tempo real.
- * @param {object} doc    Documento bruto
- * @param {object|null} owner  Funcionário dono
+ * Enriquece um documento SST bruto com o titular (funcionário) e mantém
+ * a data de validade em Date para ordenação na UI.
+ * @param {object} doc    Documento bruto (com idFuncionarioTitular)
+ * @param {object|null} owner  Funcionário titular
  */
 function enrichDoc(doc, owner) {
+  const idFuncionario = owner?.id ?? doc.idFuncionarioTitular ?? doc.idRelacionado ?? doc.parentId
   return {
     ...doc,
-    id_funcionario: owner?.id ?? doc.parentId,
-    funcionario_nome: owner?.nome ?? '—',
+    id_funcionario: idFuncionario,
+    funcionario_nome: owner?.nome ?? doc.nomeFuncionarioTitular ?? '—',
     funcionario_cargo: owner?.cargo ?? '',
     funcionario_foto: owner?.foto ?? '',
-    status_calculado: getDocumentStatus(doc.data_validade),
-    data_validade_date: normalizeDate(doc.data_validade),
+    data_validade_date: normalizeDate(doc.dataValidade),
   }
 }
 
@@ -50,14 +42,14 @@ function flattenFuncionariosDocs(funcionarios) {
   const docs = []
   for (const func of funcionarios ?? []) {
     for (const doc of func.documentos_sst ?? []) {
-      docs.push(enrichDoc(doc, func))
+      docs.push(enrichDoc({ ...doc, idFuncionarioTitular: func.id }, func))
     }
   }
   return docs
 }
 
 /**
- * Lista global de documentos (todos os funcionários).
+ * Lista global de documentos (coleção "documentos" — todos os funcionários).
  * @returns {{ docs: Array, loading: boolean, error: Error|null, refresh: Function }}
  */
 export function useDocumentos() {
@@ -87,18 +79,18 @@ export function useDocumentos() {
     const publish = () => {
       if (!active) return
       const docs = local.docs.flatMap((doc) => {
-        const owner = local.funcs.find((f) => f.id === doc.parentId)
+        const owner = local.funcs.find((f) => f.id === (doc.idFuncionarioTitular ?? doc.idRelacionado ?? doc.parentId))
         return [enrichDoc(doc, owner)]
       })
       setState({ docs, loading: false, error: null })
     }
 
-    fetchSubcollection(COLLECTIONS.FUNCIONARIOS, COLLECTIONS.DOCUMENTOS_SST)
-      .then((docs) => {
-        local.docs = docs
-        publish()
-      })
-      .catch(() => publish())
+    const unDocs = subscribeCollection(COLLECTIONS.DOCUMENTOS, (docs) => {
+      local.docs = docs
+      publish()
+    }, (err) => {
+      if (active) setState((prev) => ({ ...prev, error: err, loading: false }))
+    })
 
     const unFunc = subscribeCollection(COLLECTIONS.FUNCIONARIOS, (funcs) => {
       local.funcs = funcs
@@ -107,6 +99,7 @@ export function useDocumentos() {
 
     return () => {
       active = false
+      unDocs?.()
       unFunc?.()
     }
   }, [reloadKey])
@@ -114,45 +107,4 @@ export function useDocumentos() {
   const refresh = useCallback(() => setReloadKey((k) => k + 1), [])
 
   return { docs: state.docs, loading: state.loading, error: state.error, refresh }
-}
-
-/**
- * Documentos de um único funcionário com escuta em tempo real.
- * @param {string} funcionarioId
- * @returns {{ docs: Array, loading: boolean, error: Error|null }}
- */
-export function useDocumentosFuncionario(funcionarioId) {
-  const [docs, setDocs] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-
-  useEffect(() => {
-    if (isFirebaseConfigured) {
-      if (!funcionarioId) {
-        setDocs([])
-        setLoading(false)
-        return undefined
-      }
-      setLoading(true)
-      const cancel = subscribeSubcollection(
-        `funcionarios/${funcionarioId}`,
-        COLLECTIONS.DOCUMENTOS_SST,
-        (rows) => {
-          setDocs(rows.map((doc) => enrichDoc(doc, null)))
-          setLoading(false)
-        },
-        (err) => {
-          setError(err)
-          setLoading(false)
-        }
-      )
-      return cancel
-    }
-    // Modo demo: a lista real de funcionários é vazia, nada a mostrar.
-    setDocs([])
-    setLoading(false)
-    return undefined
-  }, [funcionarioId])
-
-  return { docs, loading, error }
 }

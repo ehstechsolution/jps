@@ -9,19 +9,16 @@
 //  - Firebase não configurado -> cai no "modo demo" com dados fictícios,
 //    permitindo desenvolvimento imediato.
 //
-// Também "achata" os documentos_sst (subcoleção de cada funcionário),
-// atribuindo a cada documento o nome do funcionário dono, o que simplifica
-// a renderização da tabela de próximos vencimentos.
+// O documento deve conter criadoPor, idFuncionarioTitular, tipoDocumento
+// e demais campos do novo formato; o titular é resolvido em memória.
 // ------------------------------------------------------------------
 import { useEffect, useMemo, useState } from 'react'
 import { isFirebaseConfigured } from '@/config/firebase'
 import {
   subscribeCollection,
-  fetchSubcollection,
   COLLECTIONS,
 } from '@/services/firestore'
 import { fetchMockDashboardData } from '@/services/mockData'
-import { getDocumentStatus } from '@/utils/sst'
 import { normalizeDate } from '@/utils/format'
 
 /**
@@ -95,13 +92,8 @@ export function useDashboardData() {
       })
     }
 
-    // Publica novamente quando os documentos SST terminarem de carregar.
-    fetchSubcollection(COLLECTIONS.FUNCIONARIOS, COLLECTIONS.DOCUMENTOS_SST)
-      .then((docs) => {
-        state.documentos_sst = docs
-        publish()
-      })
-      .catch(() => {})
+    // Publica novamente quando os documentos terminarem de carregar.
+    unsubscribe.push(subscribeCollection(COLLECTIONS.DOCUMENTOS, updateState('documentos_sst'), () => {}))
 
     unsubscribe.push(subscribeCollection(COLLECTIONS.FUNCIONARIOS, updateState('funcionarios'), () => {}))
     unsubscribe.push(subscribeCollection(COLLECTIONS.CLIENTES, updateState('clientes'), () => {}))
@@ -138,34 +130,32 @@ export function flattenDocuments(funcionarios) {
 }
 
 /**
- * Enriquece um documento SST vindo da subcoleção (modo Firestore real),
- * fazendo o "join" com o funcionário dono via parentId.
+ * Enriquece um documento SST vindo da coleção plana (modo Firestore real),
+ * fazendo o "join" com o funcionário titular via idFuncionarioTitular.
  *
- * @param {Array} docs          Documentos brutos da subcoleção
+ * @param {Array} docs          Documentos brutos da coleção "documentos"
  * @param {Array} funcionarios  Lista de funcionários
  * @returns {Array}
  */
 function enrichDocumentos(docs, funcionarios) {
   return (docs ?? []).flatMap((doc) => {
-    const owner = (funcionarios ?? []).find((f) => f.id === doc.parentId)
+    const owner = (funcionarios ?? []).find((f) => f.id === (doc.idFuncionarioTitular ?? doc.idRelacionado ?? doc.parentId))
     return enrichDocument([doc], owner)
   })
 }
 
 /**
- * Anexa nome/cargo do funcionário e recalcula status/vencimento de cada doc.
+ * Anexa nome/cargo do funcionário e a data de validade em Date de cada doc.
  * @param {Array} docs
  * @param {object|null} owner
  */
 function enrichDocument(docs, owner) {
   return docs.map((doc) => ({
     ...doc,
-    id_funcionario: owner?.id ?? doc.parentId,
-    funcionario_nome: owner?.nome ?? '—',
+    id_funcionario: owner?.id ?? doc.idFuncionarioTitular ?? doc.idRelacionado ?? doc.parentId,
+    funcionario_nome: owner?.nome ?? doc.nomeFuncionarioTitular ?? '—',
     funcionario_cargo: owner?.cargo ?? '',
-    // Recalcula o status a partir da data, mantendo a UI sempre atual
-    status_calculado: getDocumentStatus(doc.data_validade),
-    data_validade_date: normalizeDate(doc.data_validade),
+    data_validade_date: normalizeDate(doc.dataValidade),
   }))
 }
 
@@ -193,9 +183,9 @@ export function useDashboardMetrics(data) {
       (os) => os.tipo === 'ORCAMENTO' && os.status === 'PENDENTE'
     ).length
 
-    // Documentos SST críticos: vencidos ou vencendo em menos de 30 dias
+    // Documentos SST críticos: status informado diferente de vigente/arquivado
     const documentosCriticos = (documentos_sst ?? []).filter(
-      (doc) => doc.status_calculado !== 'VALIDO'
+      (doc) => doc.status && !['VIGENTE', 'ARQUIVADO'].includes(doc.status)
     ).length
 
     return { funcionariosAtivos, osEmAndamento, orcamentosPendentes, documentosCriticos }

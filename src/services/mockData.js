@@ -29,10 +29,10 @@ const FUNCIONARIOS = [
     data_admissao: '2021-03-15',
     _criadoEm: null,
     documentos_sst: [
-      { id: 'D001', tipo: 'ASO', data_emissao: '2026-06-01', data_validade: daysFromNow(45), status_validade: 'VALIDO', url_arquivo: '' },
-      { id: 'D002', tipo: 'NR-10', data_emissao: '2025-09-20', data_validade: daysFromNow(15), status_validade: 'PROXIMO_VENCIMENTO', url_arquivo: '' },
-      { id: 'D003', tipo: 'NR-35', data_emissao: '2024-12-02', data_validade: daysFromNow(-12), status_validade: 'VENCIDO', url_arquivo: '' },
-      { id: 'D004', tipo: 'NR-33', data_emissao: '2025-04-10', data_validade: daysFromNow(190), status_validade: 'VALIDO', url_arquivo: '' },
+      { id: 'D001', tipoDocumento: 'ASO', dataEmissao: '2026-06-01', dataValidade: daysFromNow(45).toISOString().slice(0, 10), status: 'VIGENTE', resultado: 'Apto', observacao: '', arquivoUrl: '', arquivoNome: '', criadoPor: 'demo' },
+      { id: 'D002', tipoDocumento: 'NR-10', dataEmissao: '2025-09-20', dataValidade: daysFromNow(15).toISOString().slice(0, 10), status: 'VIGENTE', observacao: '', arquivoUrl: '', arquivoNome: '', criadoPor: 'demo' },
+      { id: 'D003', tipoDocumento: 'NR-35', dataEmissao: '2024-12-02', dataValidade: daysFromNow(-12).toISOString().slice(0, 10), status: 'VENCIDO', observacao: '', arquivoUrl: '', arquivoNome: '', criadoPor: 'demo' },
+      { id: 'D004', tipoDocumento: 'NR-33', dataEmissao: '2025-04-10', dataValidade: daysFromNow(190).toISOString().slice(0, 10), status: 'VIGENTE', observacao: '', arquivoUrl: '', arquivoNome: '', criadoPor: 'demo' },
     ],
   },
   {
@@ -46,8 +46,8 @@ const FUNCIONARIOS = [
     data_admissao: '2019-08-01',
     _criadoEm: null,
     documentos_sst: [
-      { id: 'D005', tipo: 'ASO', data_emissao: '2026-02-10', data_validade: daysFromNow(170), status_validade: 'VALIDO', url_arquivo: '' },
-      { id: 'D006', tipo: 'NR-10', data_emissao: '2026-03-05', data_validade: daysFromNow(-2), status_validade: 'VENCIDO', url_arquivo: '' },
+      { id: 'D005', tipoDocumento: 'ASO', dataEmissao: '2026-02-10', dataValidade: daysFromNow(170).toISOString().slice(0, 10), status: 'VIGENTE', resultado: 'Apto', observacao: '', arquivoUrl: '', arquivoNome: '', criadoPor: 'demo' },
+      { id: 'D006', tipoDocumento: 'NR-10', dataEmissao: '2026-03-05', dataValidade: daysFromNow(-2).toISOString().slice(0, 10), status: 'VENCIDO', observacao: '', arquivoUrl: '', arquivoNome: '', criadoPor: 'demo' },
     ],
   },
   {
@@ -61,8 +61,8 @@ const FUNCIONARIOS = [
     data_admissao: '2022-11-20',
     _criadoEm: null,
     documentos_sst: [
-      { id: 'D007', tipo: 'ASO', data_emissao: '2026-08-01', data_validade: daysFromNow(300), status_validade: 'VALIDO', url_arquivo: '' },
-      { id: 'D008', tipo: 'NR-35', data_emissao: '2025-11-11', data_validade: daysFromNow(25), status_validade: 'PROXIMO_VENCIMENTO', url_arquivo: '' },
+      { id: 'D007', tipoDocumento: 'ASO', dataEmissao: '2026-08-01', dataValidade: daysFromNow(300).toISOString().slice(0, 10), status: 'VIGENTE', resultado: 'Apto', observacao: '', arquivoUrl: '', arquivoNome: '', criadoPor: 'demo' },
+      { id: 'D008', tipoDocumento: 'NR-35', dataEmissao: '2025-11-11', dataValidade: daysFromNow(25).toISOString().slice(0, 10), status: 'EM_ANALISE', observacao: '', arquivoUrl: '', arquivoNome: '', criadoPor: 'demo' },
     ],
   },
   {

@@ -3,7 +3,7 @@
 // ------------------------------------------------------------------
 // Módulo de Documentos SST da JPS Steel: tabela global com os documentos
 // de todos os funcionários (tempo real), busca/filtros por status,
-// abertura do arquivo, cadastro/edição/exclusão.
+// abertura do arquivo, cadastro (tela dedicada), edição e exclusão.
 // ------------------------------------------------------------------
 import { useMemo, useState } from 'react'
 import {
@@ -18,7 +18,9 @@ import {
   ShieldCheck,
   AlertTriangle,
   XCircle,
-  FileSignature,
+  PenTool,
+  Image as ImageIcon,
+  FileType2,
   CheckCircle2,
   Webhook,
   Loader2,
@@ -26,7 +28,6 @@ import {
 import PageHeader from '@/components/PageHeader'
 import StatusBadge from '@/components/StatusBadge'
 import LoadingScreen from '@/components/LoadingScreen'
-import DocumentoForm from '@/components/documentos/DocumentoForm'
 import { FuncionarioAvatar } from '@/pages/FuncionariosPage'
 import { useDocumentos } from '@/hooks/useDocumentos'
 import { useCollection } from '@/hooks/useCollection'
@@ -34,18 +35,14 @@ import { useConfig } from '@/context/ConfigContext'
 import { deleteDocumento } from '@/services/documentoService'
 import { setEmpresaWebhook } from '@/services/configService'
 import { formatDate } from '@/utils/format'
+import { statusLabel } from '@/utils/sst'
+import { classificarArquivo } from '@/utils/arquivo'
 
-/** Ordem de criticidade para ordenação dos documentos. */
-const STATUS_ORDER = { VENCIDO: 0, PROXIMO_VENCIMENTO: 1, VALIDO: 2 }
-const FILTROS_STATUS = [
-  { value: 'TODOS', label: 'Todos' },
-  { value: 'VALIDO', label: 'Válidos' },
-  { value: 'PROXIMO_VENCIMENTO', label: 'Próximos' },
-  { value: 'VENCIDO', label: 'Vencidos' },
-]
+/** Ordem de criticidade para ordenação por status manual dos documentos. */
+const STATUS_ORDER = { VENCIDO: 0, EM_ANALISE: 1, VIGENTE: 2, ARQUIVADO: 3 }
 
-export default function DocumentosPage({ onOpenMenu, onOpenDocumentoNovo, onOpenDocumentoPdf }) {
-  const { configDocumentos, empresaWebhook, reloadConfig } = useConfig()
+export default function DocumentosPage({ onOpenMenu, onNavigate, onOpenDocumentoNovo, onOpenDocumentoEditar, onOpenDocumentoPdf, onOpenDocumentoImagem, onOpenDocumentoWord, documentoFiltro }) {
+  const { configDocumentosStatuses, empresaWebhook, reloadConfig } = useConfig()
   const { docs, loading, error, refresh } = useDocumentos()
   const { data: funcionarios } = useCollection('funcionarios')
   const isDemo = !funcionarios?.length && docs.length > 0
@@ -59,47 +56,57 @@ export default function DocumentosPage({ onOpenMenu, onOpenDocumentoNovo, onOpen
   const [busca, setBusca] = useState('')
   const [statusFiltro, setStatusFiltro] = useState('TODOS')
 
-  // Estado do formulário (novo / edição); documento nulo = novo
-  const [formState, setFormState] = useState({ open: false, documento: null, ownerId: '' })
+  // Filtros de status dinâmicos (config/documentos/status)
+  const filtrosStatus = useMemo(() => {
+    return [{ value: 'TODOS', label: 'Todos' }, ...(configDocumentosStatuses ?? []).map((s) => ({ value: s, label: statusLabel(s) }))]
+  }, [configDocumentosStatuses])
 
-  /** Lista filtrada e ordenada por criticidade/data de validade. */
+  // Documentos apenas do funcionário filtrado (via botão da lista de funcionários)
+  const docsDoFiltro = useMemo(() => {
+    if (!documentoFiltro) return docs ?? []
+    return (docs ?? []).filter((doc) => doc.id_funcionario === documentoFiltro)
+  }, [docs, documentoFiltro])
+
+  // Funcionário correspondente ao filtro ativo (para o cabeçalho do aviso)
+  const funcionarioFiltro = useMemo(
+    () => (documentoFiltro ? (funcionarios ?? []).find((f) => f.id === documentoFiltro) ?? null : null),
+    [documentoFiltro, funcionarios]
+  )
+
+  /** Lista filtrada e ordenada por status/de data de validade. */
   const filtered = useMemo(() => {
     const term = busca.trim().toLowerCase()
-    return [...(docs ?? [])]
+    return [...docsDoFiltro]
       .filter((doc) => {
-        if (statusFiltro !== 'TODOS' && !doc.data_validade) return false
-        if (statusFiltro !== 'TODOS' && doc.status_calculado !== statusFiltro) return false
+        if (statusFiltro !== 'TODOS' && doc.status !== statusFiltro) return false
         if (!term) return true
         return (
           (doc.funcionario_nome ?? '').toLowerCase().includes(term) ||
-          (doc.tipo ?? '').toLowerCase().includes(term) ||
+          (doc.tipoDocumento ?? '').toLowerCase().includes(term) ||
           (doc.descricao ?? '').toLowerCase().includes(term)
         )
       })
       .sort((a, b) => {
-        const semValidadeA = !a.data_validade
-        const semValidadeB = !b.data_validade
-        if (semValidadeA !== semValidadeB) return semValidadeA ? 1 : -1
-        const critA = STATUS_ORDER[a.status_calculado] ?? 3
-        const critB = STATUS_ORDER[b.status_calculado] ?? 3
+        const critA = STATUS_ORDER[a.status] ?? 3
+        const critB = STATUS_ORDER[b.status] ?? 3
         if (critA !== critB) return critA - critB
-        return String(a.data_validade ?? '').localeCompare(String(b.data_validade ?? ''))
+        return String(a.dataValidade ?? '').localeCompare(String(b.dataValidade ?? ''))
       })
-  }, [docs, busca, statusFiltro])
+  }, [docsDoFiltro, busca, statusFiltro])
 
-  // Contadores para os mini-cards
+  // Contadores para os mini-cards (respeitam o filtro de funcionário)
   const counters = useMemo(() => {
-    const total = docs?.length ?? 0
-    const validos = (docs ?? []).filter((d) => d.data_validade && d.status_calculado === 'VALIDO').length
-    const alerta = (docs ?? []).filter((d) => d.status_calculado === 'PROXIMO_VENCIMENTO').length
-    const vencidos = (docs ?? []).filter((d) => d.status_calculado === 'VENCIDO').length
-    return { total, validos, alerta, vencidos }
-  }, [docs])
+    const total = docsDoFiltro.length
+    const vigentes = docsDoFiltro.filter((d) => d.status === 'VIGENTE').length
+    const emAnalise = docsDoFiltro.filter((d) => d.status === 'EM_ANALISE').length
+    const vencidos = docsDoFiltro.filter((d) => d.status === 'VENCIDO').length
+    return { total, vigentes, emAnalise, vencidos }
+  }, [docsDoFiltro])
 
   /** Exclui um documento com confirmação. */
   async function handleDelete(documento) {
     const dono = documento.funcionario_nome ?? 'funcionário'
-    if (!window.confirm(`Excluir o documento "${documento.tipo}" de ${dono}?`)) return
+    if (!window.confirm(`Excluir o documento "${documento.tipoDocumento ?? documento.tipo}" de ${dono}?`)) return
     try {
       await deleteDocumento(documento.id_funcionario, documento)
     } catch (err) {
@@ -136,7 +143,7 @@ export default function DocumentosPage({ onOpenMenu, onOpenDocumentoNovo, onOpen
               Atualizar
             </button>
             <button
-              onClick={() => onOpenDocumentoNovo?.()}
+              onClick={() => onOpenDocumentoNovo?.(documentoFiltro ?? undefined)}
               className="btn-primary"
             >
               <FilePlus size={16} />
@@ -155,6 +162,30 @@ export default function DocumentosPage({ onOpenMenu, onOpenDocumentoNovo, onOpen
       {isDemo && (
         <div className="mb-4 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">
           Modo demonstração: exibindo documentos fictícios até o Firebase ser configurado.
+        </div>
+      )}
+
+      {funcionarioFiltro && (
+        <div className="mb-4 flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl bg-steel-50 dark:bg-steel-500/10 border border-steel-200 dark:border-steel-500/30 px-4 py-3">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <span className="grid place-items-center h-9 w-9 rounded-full bg-steel-600 text-white shrink-0">
+              <FileText size={16} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">
+                Documentos de {funcionarioFiltro.nome}
+              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Lista filtrada — criação e edição são feitas aqui no módulo de Documentos.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => onNavigate?.('documentos')}
+            className="btn text-sm text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-graphite-700 bg-white dark:bg-graphite-850 whitespace-nowrap"
+          >
+            Mostrar todos
+          </button>
         </div>
       )}
 
@@ -190,8 +221,8 @@ export default function DocumentosPage({ onOpenMenu, onOpenDocumentoNovo, onOpen
       {/* Mini-cards de resumo */}
       <section className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
         <MiniCounter icon={FileStack} label="Documentos" value={counters.total} tone="steel" />
-        <MiniCounter icon={ShieldCheck} label="Válidos" value={counters.validos} tone="emerald" />
-        <MiniCounter icon={AlertTriangle} label="Em alerta" value={counters.alerta} tone="amber" />
+        <MiniCounter icon={ShieldCheck} label="Vigentes" value={counters.vigentes} tone="emerald" />
+        <MiniCounter icon={AlertTriangle} label="Em análise" value={counters.emAnalise} tone="amber" />
         <MiniCounter icon={XCircle} label="Vencidos" value={counters.vencidos} tone="red" />
       </section>
 
@@ -207,7 +238,7 @@ export default function DocumentosPage({ onOpenMenu, onOpenDocumentoNovo, onOpen
           />
         </div>
         <div className="flex gap-2 sm:w-auto">
-          {FILTROS_STATUS.map((f) => (
+          {(filtrosStatus ?? []).map((f) => (
             <button
               key={f.value}
               onClick={() => setStatusFiltro(f.value)}
@@ -230,8 +261,10 @@ export default function DocumentosPage({ onOpenMenu, onOpenDocumentoNovo, onOpen
         <div className="card p-10 text-center">
           <FileText size={32} className="mx-auto mb-3 text-slate-300 dark:text-slate-600" />
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            {docs?.length === 0
-              ? 'Nenhum documento cadastrado ainda. Clique em "Novo Documento" para começar.'
+            {docsDoFiltro.length === 0
+              ? documentoFiltro
+                ? 'Nenhum documento cadastrado para este colaborador.'
+                : 'Nenhum documento cadastrado ainda. Clique em "Novo Documento" para começar.'
               : 'Nenhum documento encontrado para os filtros aplicados.'}
           </p>
         </div>
@@ -269,56 +302,76 @@ export default function DocumentosPage({ onOpenMenu, onOpenDocumentoNovo, onOpen
                       </div>
                     </td>
                     <td>
-                      <p className="font-medium text-slate-800 dark:text-slate-100">{doc.tipo}</p>
+                      <p className="font-medium text-slate-800 dark:text-slate-100">{doc.tipoDocumento ?? doc.tipo}</p>
                       {doc.descricao && (
                         <p className="text-xs text-slate-400 truncate max-w-[220px]">{doc.descricao}</p>
                       )}
                     </td>
                     <td className="whitespace-nowrap text-slate-600 dark:text-slate-300">
-                      {formatDate(doc.data_emissao)}
+                      {formatDate(doc.dataEmissao ?? doc.data_emissao)}
                     </td>
                     <td className="whitespace-nowrap text-slate-600 dark:text-slate-300">
-                      {doc.data_validade ? (
-                        <span className={doc.status_calculado === 'VENCIDO' ? 'text-red-500 font-medium' : doc.status_calculado === 'PROXIMO_VENCIMENTO' ? 'text-amber-600 dark:text-amber-400 font-medium' : ''}>
-                          {formatDate(doc.data_validade)}
-                        </span>
-                      ) : (
-                        <span className="text-slate-400">Sem validade</span>
-                      )}
+                      {doc.dataValidade ? formatDate(doc.dataValidade) : <span className="text-slate-400">Sem validade</span>}
                     </td>
                     <td>
-                      {doc.data_validade ? (
-                        <StatusBadge status={doc.status_calculado} />
+                      {doc.status ? (
+                        <StatusBadge status={doc.status} />
                       ) : (
-                        <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ring-inset bg-slate-100 text-slate-600 dark:bg-slate-700/30 dark:text-slate-300 ring-slate-600/20">
-                          Sem validade
-                        </span>
+                        <span className="text-slate-400 text-xs">—</span>
                       )}
                     </td>
                     <td>
                       <div className="flex items-center justify-end gap-1">
-                        {doc.url_arquivo && (
+                        {doc.arquivoUrl && (
                           <a
-                            href={doc.url_arquivo}
+                            href={doc.arquivoUrl}
                             target="_blank"
                             rel="noreferrer"
                             className="grid place-items-center h-8 w-8 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-graphite-800 hover:text-steel-600 dark:hover:text-steel-400"
-                            title={`Abrir arquivo ${doc.arquivo_nome ?? ''}`}
+                            title={`Abrir arquivo ${doc.arquivoNome ?? ''}`}
                           >
                             <ExternalLink size={15} />
                           </a>
                         )}
-                        {doc.url_arquivo?.toLowerCase().match(/\.pdf$/) && (
-                          <button
-                            onClick={() => onOpenDocumentoPdf?.(doc)}
-                            className="grid place-items-center h-8 w-8 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-graphite-800 hover:text-steel-600 dark:hover:text-steel-400"
-                            title="Carimbar / assinar PDF"
-                          >
-                            <FileSignature size={15} />
-                          </button>
-                        )}
+                        {(() => {
+                          const tipo = classificarArquivo(doc.arquivoUrl, doc.arquivoNome)
+                          if (tipo === 'pdf') {
+                            return (
+                              <button
+                                onClick={() => onOpenDocumentoPdf?.(doc)}
+                                className="grid place-items-center h-8 w-8 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-graphite-800 hover:text-steel-600 dark:hover:text-steel-400"
+                                title="Editar no PDF"
+                              >
+                                <PenTool size={15} />
+                              </button>
+                            )
+                          }
+                          if (tipo === 'imagem') {
+                            return (
+                              <button
+                                onClick={() => onOpenDocumentoImagem?.(doc)}
+                                className="grid place-items-center h-8 w-8 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-graphite-800 hover:text-steel-600 dark:hover:text-steel-400"
+                                title="Editar na imagem"
+                              >
+                                <ImageIcon size={15} />
+                              </button>
+                            )
+                          }
+                          if (tipo === 'word') {
+                            return (
+                              <button
+                                onClick={() => onOpenDocumentoWord?.(doc)}
+                                className="grid place-items-center h-8 w-8 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-graphite-800 hover:text-steel-600 dark:hover:text-steel-400"
+                                title="Editar no arquivo"
+                              >
+                                <FileType2 size={15} />
+                              </button>
+                            )
+                          }
+                          return null
+                        })()}
                         <button
-                          onClick={() => setFormState({ open: true, documento: doc, ownerId: doc.id_funcionario })}
+                          onClick={() => onOpenDocumentoEditar?.(doc)}
                           className="grid place-items-center h-8 w-8 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-graphite-800 hover:text-steel-600 dark:hover:text-steel-400"
                           title="Editar documento"
                         >
@@ -340,20 +393,6 @@ export default function DocumentosPage({ onOpenMenu, onOpenDocumentoNovo, onOpen
           </div>
         </div>
       )}
-
-      {/* Modal de cadastro/edição */}
-      <DocumentoForm
-        open={formState.open}
-        documento={formState.documento}
-        funcionarioId={formState.ownerId}
-        funcionarios={funcionarios ?? []}
-        onChangeOwner={(ownerId) => setFormState((prev) => ({ ...prev, ownerId }))}
-        onClose={() => setFormState({ open: false, documento: null, ownerId: '' })}
-        onSaved={() => {
-          // A lista global busca no Firestore; força nova consulta para refletir já
-          refresh()
-        }}
-      />
     </div>
   )
 }

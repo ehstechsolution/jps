@@ -20,14 +20,13 @@ import PageHeader from '@/components/PageHeader'
 import StatusBadge from '@/components/StatusBadge'
 import LoadingScreen from '@/components/LoadingScreen'
 import FuncionarioForm from '@/components/funcionarios/FuncionarioForm'
-import DocumentosDrawer from '@/components/documentos/DocumentosDrawer'
 import { useCollection } from '@/hooks/useCollection'
 import { useConfig } from '@/context/ConfigContext'
 import { useAuth } from '@/context/AuthContext'
 import { formatDate } from '@/utils/format'
 import { setFuncionarioStatus } from '@/services/funcionarioService'
 
-export default function FuncionariosPage({ onOpenMenu, onNavigate, onOpenDocumentoNovo, onOpenDocumentoPdf }) {
+export default function FuncionariosPage({ onOpenMenu, onNavigate, onOpenDocumentosFuncionario }) {
   const { data: funcionarios, loading, error } = useCollection('funcionarios')
   const { seedConfig, configLoading } = useConfig()
   const { isAdmin } = useAuth()
@@ -38,8 +37,6 @@ export default function FuncionariosPage({ onOpenMenu, onNavigate, onOpenDocumen
 
   // Estado do formulário (novo / edição)
   const [formState, setFormState] = useState({ open: false, funcionario: null })
-  // Estado do painel de documentos (funcionário selecionado)
-  const [drawerFunc, setDrawerFunc] = useState(null)
   const [seedFeedback, setSeedFeedback] = useState('')
 
   /** Lista filtrada e ordenada por nome. */
@@ -214,9 +211,9 @@ export default function FuncionariosPage({ onOpenMenu, onNavigate, onOpenDocumen
                     <td>
                       <div className="flex items-center justify-end gap-1">
                         <button
-                          onClick={() => setDrawerFunc(f)}
+                          onClick={() => onOpenDocumentosFuncionario?.(f.id)}
                           className="grid place-items-center h-8 w-8 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-graphite-800 hover:text-steel-600 dark:hover:text-steel-400"
-                          title="Ver documentos SST"
+                          title={`Ver documentos SST de ${f.nome}`}
                         >
                           <FileText size={15} />
                         </button>
@@ -256,15 +253,6 @@ export default function FuncionariosPage({ onOpenMenu, onNavigate, onOpenDocumen
         onSaved={() => {
           // Nada além do fechamento é necessário: a listagem é real-time
         }}
-      />
-
-      {/* Painel de documentos SST do funcionário */}
-      <DocumentosDrawer
-        funcionario={drawerFunc}
-        onClose={() => setDrawerFunc(null)}
-        onOpenDocumentoNovo={onOpenDocumentoNovo}
-        onOpenDocumentoPdf={onOpenDocumentoPdf}
-        onUpdated={() => setDrawerFunc((f) => ({ ...f }))}
       />
 
       {/* Nota quando o e-mail logado não tem perfil */}
