@@ -1,0 +1,25 @@
+# Dependências
+node_modules
+dist
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Ambiente / segredos (nunca commitar)
+.env
+.env.local
+.env.*.local
+
+# Editor / SO
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+Thumbs.db
+*.suo
+
+# Firebase
+.firebase/
+firebase-debug.log
