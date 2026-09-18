@@ -5,29 +5,37 @@
 //
 // A cada documento criado/atualizado/excluído, o app faz um POST para a
 // URL configurada em config/empresa.webhook com TODOS os dados do
-// documento (incluindo o arquivo em base64, quando puder ser baixado).
+// documento (incluindo "id" e o arquivo em base64, quando puder ser
+// baixado), além do campo "acao" indicando o que foi feito:
 //
-// Payload enviado (JSON):
+//   acao: 'create' | 'update' | 'delete'
+//
+// Payload enviado (JSON, top-level):
 //   {
-//     evento: 'criado' | 'atualizado' | 'excluido',
-//     documento: {
-//       id, idDocumento, idFuncionarioTitular, nomeFuncionarioTitular,
-//       emailTitular, tipoDocumento, descricao, dataEmissao, dataValidade,
-//       status, resultado, observacao, arquivoUrl, arquivoNome,
-//       criadoPor, arquivo_base64,
-//       // aliases legados (compatibilidade com integrações antigas):
-//       id_funcionario, funcionario_nome, tipo, url_arquivo, arquivo_nome
-//     },
-//     enviadoEm: 'ISO...'
+//     ...todasAsPropriedadesDoDocumento,   // inclui id, idDocumento,
+//                                          // tipoDocumento, datas, status,
+//                                          // arquivoUrl, arquivoNome, ...
+//     acao: 'create' | 'update' | 'delete',
+//     evento: 'criado' | 'atualizado' | 'excluido',  // legado (mantido)
+//     arquivo_base64: 'data:...',
+//     enviadoEm: 'ISO...',
+//     // aliases legados (compatibilidade com integrações antigas):
+//     id_funcionario, funcionario_nome, tipo, url_arquivo, arquivo_nome,
+//     observacoes, data_emissao, data_validade
 //   }
 //
-// Se config/empresa.webhookToken existir, é enviado o header
+// Campos internos do Firestore (_criadoEm/_atualizadoEm) são removidos
+// do payload por serem sentinelas de serverTimestamp. Se
+// config/empresa.webhookToken existir, é enviado o header
 // "X-Webhook-Token" com esse valor. Se a URL não estiver configurada,
 // o app segue funcionando normalmente (notificação é silenciosa).
 // ------------------------------------------------------------------
 import { doc, getDoc } from 'firebase/firestore'
 import { db, isFirebaseConfigured } from '@/config/firebase'
 import { COLLECTIONS, CONFIG_DOCS } from '@/services/firestore'
+
+/** Mapeia o evento interno para o valor de "acao" do payload. */
+const ACAO = { criado: 'create', atualizado: 'update', excluido: 'delete' }
 
 /**
  * Lê a configuração do webhook (config/empresa).
@@ -98,36 +106,42 @@ export async function notifyDocumentEvent(evento, funcionarioId, doc) {
   // Tenta incluir o arquivo em base64; em falha, envia apenas a URL.
   const arquivo_base64 = (doc.arquivoUrl ?? doc.url_arquivo) ? await fetchAsBase64(doc.arquivoUrl ?? doc.url_arquivo) : null
 
+  // Todos os dados do documento. Campos internos (sentinelas de
+  // serverTimestamp) são removidos por não serializarem como data real.
+  const { _criadoEm, _atualizadoEm, ...dados } = { ...doc }
+
   const payload = {
+    ...dados,
+    // Identificação
+    id: doc.id ?? (doc.idDocumento ?? ''),
+    idDocumento: doc.idDocumento ?? doc.id ?? '',
+    idFuncionarioTitular: funcionarioId ?? '',
+    nomeFuncionarioTitular: doc.nomeFuncionarioTitular ?? funcionarioNome,
+    emailTitular: doc.emailTitular ?? '',
+    // Dados do documento
+    tipoDocumento: doc.tipoDocumento ?? '',
+    descricao: doc.descricao ?? '',
+    dataEmissao: doc.dataEmissao ?? '',
+    dataValidade: doc.dataValidade ?? '',
+    status: doc.status ?? '',
+    resultado: doc.resultado ?? '',
+    observacao: doc.observacao ?? '',
+    arquivoUrl: doc.arquivoUrl ?? '',
+    arquivoNome: doc.arquivoNome ?? '',
+    criadoPor: doc.criadoPor ?? '',
+    // Evento
+    acao: ACAO[evento] ?? 'update',
     evento,
-    documento: {
-      id: doc.id ?? (doc.idDocumento ?? ''),
-      // Formato novo
-      idDocumento: doc.idDocumento ?? doc.id ?? '',
-      idFuncionarioTitular: funcionarioId ?? '',
-      nomeFuncionarioTitular: doc.nomeFuncionarioTitular ?? funcionarioNome,
-      emailTitular: doc.emailTitular ?? '',
-      tipoDocumento: doc.tipoDocumento ?? '',
-      descricao: doc.descricao ?? '',
-      dataEmissao: doc.dataEmissao ?? '',
-      dataValidade: doc.dataValidade ?? '',
-      status: doc.status ?? '',
-      resultado: doc.resultado ?? '',
-      observacao: doc.observacao ?? '',
-      arquivoUrl: doc.arquivoUrl ?? '',
-      arquivoNome: doc.arquivoNome ?? '',
-      criadoPor: doc.criadoPor ?? '',
-      arquivo_base64,
-      // Aliases legados (compatibilidade com integrações antigas)
-      id_funcionario: funcionarioId,
-      funcionario_nome: funcionarioNome,
-      tipo: doc.tipoDocumento ?? '',
-      url_arquivo: doc.arquivoUrl ?? '',
-      arquivo_nome: doc.arquivoNome ?? '',
-      observacoes: doc.observacao ?? '',
-      data_emissao: doc.dataEmissao ?? '',
-      data_validade: doc.dataValidade ?? '',
-    },
+    arquivo_base64,
+    // Aliases legados (compatibilidade com integrações antigas)
+    id_funcionario: funcionarioId,
+    funcionario_nome: funcionarioNome,
+    tipo: doc.tipoDocumento ?? '',
+    url_arquivo: doc.arquivoUrl ?? '',
+    arquivo_nome: doc.arquivoNome ?? '',
+    observacoes: doc.observacao ?? '',
+    data_emissao: doc.dataEmissao ?? '',
+    data_validade: doc.dataValidade ?? '',
     enviadoEm: new Date().toISOString(),
   }
 

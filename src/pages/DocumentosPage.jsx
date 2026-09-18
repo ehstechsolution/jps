@@ -18,12 +18,6 @@ import {
   ShieldCheck,
   AlertTriangle,
   XCircle,
-  PenTool,
-  Image as ImageIcon,
-  FileType2,
-  CheckCircle2,
-  Webhook,
-  Loader2,
 } from 'lucide-react'
 import PageHeader from '@/components/PageHeader'
 import StatusBadge from '@/components/StatusBadge'
@@ -33,24 +27,24 @@ import { useDocumentos } from '@/hooks/useDocumentos'
 import { useCollection } from '@/hooks/useCollection'
 import { useConfig } from '@/context/ConfigContext'
 import { deleteDocumento } from '@/services/documentoService'
-import { setEmpresaWebhook } from '@/services/configService'
 import { formatDate } from '@/utils/format'
 import { statusLabel } from '@/utils/sst'
-import { classificarArquivo } from '@/utils/arquivo'
 
 /** Ordem de criticidade para ordenação por status manual dos documentos. */
-const STATUS_ORDER = { VENCIDO: 0, EM_ANALISE: 1, VIGENTE: 2, ARQUIVADO: 3 }
+/** Grupo de ordenação: ativos com validade primeiro, vencidos por último. */
+const sortBucket = (doc) => {
+  const status = String(doc.status ?? '').toUpperCase()
+  const temData = Boolean(String(doc.dataValidade ?? '').trim())
+  if (status === 'VENCIDO') return 3
+  if (status === 'ARQUIVADO') return 2
+  return temData ? 0 : 1
+}
 
-export default function DocumentosPage({ onOpenMenu, onNavigate, onOpenDocumentoNovo, onOpenDocumentoEditar, onOpenDocumentoPdf, onOpenDocumentoImagem, onOpenDocumentoWord, documentoFiltro }) {
-  const { configDocumentosStatuses, empresaWebhook, reloadConfig } = useConfig()
+export default function DocumentosPage({ onOpenMenu, onNavigate, onOpenDocumentoNovo, onOpenDocumentoEditar, documentoFiltro }) {
+  const { configDocumentosStatuses } = useConfig()
   const { docs, loading, error, refresh } = useDocumentos()
   const { data: funcionarios } = useCollection('funcionarios')
   const isDemo = !funcionarios?.length && docs.length > 0
-
-  // Estado do webhook (Config em tempo real)
-  const [webhook, setWebhook] = useState(empresaWebhook ?? '')
-  const [webhookMsg, setWebhookMsg] = useState('')
-  const [salvandoWebhook, setSalvandoWebhook] = useState(false)
 
   // Estado da listagem
   const [busca, setBusca] = useState('')
@@ -73,7 +67,7 @@ export default function DocumentosPage({ onOpenMenu, onNavigate, onOpenDocumento
     [documentoFiltro, funcionarios]
   )
 
-  /** Lista filtrada e ordenada por status/de data de validade. */
+  /** Lista filtrada e ordenada: quem vence primeiro no topo; vencidos por último. */
   const filtered = useMemo(() => {
     const term = busca.trim().toLowerCase()
     return [...docsDoFiltro]
@@ -87,9 +81,9 @@ export default function DocumentosPage({ onOpenMenu, onNavigate, onOpenDocumento
         )
       })
       .sort((a, b) => {
-        const critA = STATUS_ORDER[a.status] ?? 3
-        const critB = STATUS_ORDER[b.status] ?? 3
-        if (critA !== critB) return critA - critB
+        const ba = sortBucket(a)
+        const bb = sortBucket(b)
+        if (ba !== bb) return ba - bb
         return String(a.dataValidade ?? '').localeCompare(String(b.dataValidade ?? ''))
       })
   }, [docsDoFiltro, busca, statusFiltro])
@@ -111,22 +105,6 @@ export default function DocumentosPage({ onOpenMenu, onNavigate, onOpenDocumento
       await deleteDocumento(documento.id_funcionario, documento)
     } catch (err) {
       window.alert(err?.message ?? 'Não foi possível excluir.')
-    }
-  }
-
-  /** Salva a URL do webhook de eventos de documentos. */
-  async function handleSaveWebhook() {
-    setSalvandoWebhook(true)
-    setWebhookMsg('')
-    try {
-      await setEmpresaWebhook(webhook.trim())
-      await reloadConfig()
-      setWebhookMsg('Webhook atualizado!')
-      setTimeout(() => setWebhookMsg(''), 2500)
-    } catch (err) {
-      setWebhookMsg(err?.message ?? 'Não foi possível salvar.')
-    } finally {
-      setSalvandoWebhook(false)
     }
   }
 
@@ -188,35 +166,6 @@ export default function DocumentosPage({ onOpenMenu, onNavigate, onOpenDocumento
           </button>
         </div>
       )}
-
-      {/* Integração: webhook de eventos de documentos */}
-      <div className="card p-4 mb-5">
-        <h3 className="flex items-center gap-2 text-sm font-bold text-slate-800 dark:text-slate-100 mb-1">
-          <Webhook size={15} className="text-steel-600 dark:text-steel-400" />
-          Notificações externas (webhook)
-        </h3>
-        <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
-          A cada documento criado, alterado ou excluído, o app dispara um POST em JSON com os dados
-          (incluindo o arquivo em base64). Deixe em branco para desativar. Você monta o alerta externo do seu lado.
-        </p>
-        <div className="flex flex-col sm:flex-row gap-2">
-          <input
-            className="input flex-1"
-            placeholder="https://seu-destino.com/webhook/documentos"
-            value={webhook}
-            onChange={(e) => setWebhook(e.target.value)}
-          />
-          <button onClick={handleSaveWebhook} disabled={salvandoWebhook} className="btn-primary whitespace-nowrap">
-            {salvandoWebhook ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-            {salvandoWebhook ? 'Salvando...' : 'Salvar URL'}
-          </button>
-        </div>
-        {webhookMsg && (
-          <p className={`mt-2 text-xs ${webhookMsg.includes('atualizado') ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'}`}>
-            {webhookMsg}
-          </p>
-        )}
-      </div>
 
       {/* Mini-cards de resumo */}
       <section className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
@@ -333,43 +282,6 @@ export default function DocumentosPage({ onOpenMenu, onNavigate, onOpenDocumento
                             <ExternalLink size={15} />
                           </a>
                         )}
-                        {(() => {
-                          const tipo = classificarArquivo(doc.arquivoUrl, doc.arquivoNome)
-                          if (tipo === 'pdf') {
-                            return (
-                              <button
-                                onClick={() => onOpenDocumentoPdf?.(doc)}
-                                className="grid place-items-center h-8 w-8 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-graphite-800 hover:text-steel-600 dark:hover:text-steel-400"
-                                title="Editar no PDF"
-                              >
-                                <PenTool size={15} />
-                              </button>
-                            )
-                          }
-                          if (tipo === 'imagem') {
-                            return (
-                              <button
-                                onClick={() => onOpenDocumentoImagem?.(doc)}
-                                className="grid place-items-center h-8 w-8 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-graphite-800 hover:text-steel-600 dark:hover:text-steel-400"
-                                title="Editar na imagem"
-                              >
-                                <ImageIcon size={15} />
-                              </button>
-                            )
-                          }
-                          if (tipo === 'word') {
-                            return (
-                              <button
-                                onClick={() => onOpenDocumentoWord?.(doc)}
-                                className="grid place-items-center h-8 w-8 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-graphite-800 hover:text-steel-600 dark:hover:text-steel-400"
-                                title="Editar no arquivo"
-                              >
-                                <FileType2 size={15} />
-                              </button>
-                            )
-                          }
-                          return null
-                        })()}
                         <button
                           onClick={() => onOpenDocumentoEditar?.(doc)}
                           className="grid place-items-center h-8 w-8 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-graphite-800 hover:text-steel-600 dark:hover:text-steel-400"

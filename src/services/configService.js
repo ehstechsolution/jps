@@ -81,22 +81,27 @@ export async function getEmpresaLogo() {
 
 /**
  * Lê o documento config/empresa, retornando as configurações de empresa.
- * @returns {Promise<{logo: string, webhook: string, webhookToken: string}>}
+ * @returns {Promise<{logo: string, webhook: string, webhookToken: string, diasAlerta: number|null}>}
  */
 export async function getEmpresaConfig() {
-  if (!isFirebaseConfigured || !db) return { logo: '', webhook: '', webhookToken: '' }
+  if (!isFirebaseConfigured || !db) return { logo: '', webhook: '', webhookToken: '', diasAlerta: null }
   try {
     const snap = await getDoc(doc(db, COLLECTIONS.CONFIG, CONFIG_DOCS.EMPRESA))
-    if (!snap.exists()) return { logo: '', webhook: '', webhookToken: '' }
+    if (!snap.exists()) return { logo: '', webhook: '', webhookToken: '', diasAlerta: null }
     const d = snap.data()
+    // Dias de antecedência para alerta de vencimento (config/empresa.diasalerta)
+    let diasAlerta = null
+    const raw = Number(d.diasalerta)
+    if (Number.isFinite(raw) && raw >= 0) diasAlerta = Math.max(0, Math.round(raw))
     return {
       logo: typeof d.logo === 'string' ? d.logo : '',
       webhook: typeof d.webhook === 'string' ? d.webhook : '',
       webhookToken: typeof d.webhookToken === 'string' ? d.webhookToken : '',
+      diasAlerta,
     }
   } catch (err) {
     console.warn('[config] Não foi possível ler config/empresa:', err)
-    return { logo: '', webhook: '', webhookToken: '' }
+    return { logo: '', webhook: '', webhookToken: '', diasAlerta: null }
   }
 }
 

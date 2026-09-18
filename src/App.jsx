@@ -6,9 +6,10 @@
 //  - Sem sessão -> bloqueia todo o app na tela de Login;
 //  - Com sessão -> layout shell (Sidebar + área de conteúdo).
 // ------------------------------------------------------------------
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import logoLocal from '@/assets/logo.png'
 import { ThemeProvider } from '@/context/ThemeContext'
-import { ConfigProvider } from '@/context/ConfigContext'
+import { ConfigProvider, useConfig } from '@/context/ConfigContext'
 import { AuthProvider, useAuth } from '@/context/AuthContext'
 import Sidebar from '@/components/Sidebar'
 import LoadingScreen from '@/components/LoadingScreen'
@@ -18,9 +19,6 @@ import FuncionariosPage from '@/pages/FuncionariosPage'
 import DocumentosPage from '@/pages/DocumentosPage'
 import PlaceholderPage from '@/pages/PlaceholderPage'
 import DocumentoFormularioPage from '@/pages/DocumentoFormularioPage'
-import DocumentoEditarPage from '@/pages/DocumentoEditarPage'
-import DocumentoImagemPage from '@/pages/DocumentoImagemPage'
-import DocumentoWordPage from '@/pages/DocumentoWordPage'
 import { useCollection } from '@/hooks/useCollection'
 
 /** Páginas disponíveis e seus componentes. */
@@ -47,6 +45,20 @@ export default function App() {
 }
 
 /**
+ * Mantém o favicon sempre igual ao logo exibido (asset ou config/empresa).
+ */
+function FaviconSync() {
+  const { empresaLogo } = useConfig()
+  useEffect(() => {
+    const href = empresaLogo || logoLocal
+    document.querySelectorAll('link[rel*="icon"]').forEach((link) => {
+      link.href = href
+    })
+  }, [empresaLogo])
+  return null
+}
+
+/**
  * Decide a tela exibida com base no estado de autenticação.
  */
 function Root() {
@@ -61,9 +73,21 @@ function Root() {
   }
 
   // Sem sessão -> tela de autenticação (login/cadastro)
-  if (!user) return <AuthPage />
+  if (!user) {
+    return (
+      <>
+        <FaviconSync />
+        <AuthPage />
+      </>
+    )
+  }
 
-  return <Shell />
+  return (
+    <>
+      <FaviconSync />
+      <Shell />
+    </>
+  )
 }
 
 /**
@@ -94,7 +118,7 @@ function Shell() {
   const PageComponent = PAGES[activePage] ?? PAGES.dashboard
 
   /**
-   * Views dedicadas de documentos (novo/editar/carimbar PDF) — renderizadas
+   * Views dedicadas de documentos (novo/editar registro) — renderizadas
    * no lugar da página ativa, sem mudar de módulo.
    */
   if (docView?.kind === 'novo' || docView?.kind === 'editar') {
@@ -109,45 +133,6 @@ function Shell() {
               documento={docView.kind === 'editar' ? docView.doc : null}
               onBack={() => setDocView(null)}
             />
-          </div>
-        </main>
-      </div>
-    )
-  }
-
-  if (docView?.kind === 'editar-pdf') {
-    return (
-      <div className="min-h-screen flex bg-slate-100 dark:bg-graphite-900">
-        <Sidebar activePage="documentos" onNavigate={handleNavigate} onClose={() => setMenuOpen(false)} open={menuOpen} />
-        <main className="flex-1 min-w-0">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-            <DocumentoEditarPage doc={docView.doc} onBack={() => setDocView(null)} />
-          </div>
-        </main>
-      </div>
-    )
-  }
-
-  if (docView?.kind === 'editar-imagem') {
-    return (
-      <div className="min-h-screen flex bg-slate-100 dark:bg-graphite-900">
-        <Sidebar activePage="documentos" onNavigate={handleNavigate} onClose={() => setMenuOpen(false)} open={menuOpen} />
-        <main className="flex-1 min-w-0">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-            <DocumentoImagemPage doc={docView.doc} onBack={() => setDocView(null)} />
-          </div>
-        </main>
-      </div>
-    )
-  }
-
-  if (docView?.kind === 'editar-word') {
-    return (
-      <div className="min-h-screen flex bg-slate-100 dark:bg-graphite-900">
-        <Sidebar activePage="documentos" onNavigate={handleNavigate} onClose={() => setMenuOpen(false)} open={menuOpen} />
-        <main className="flex-1 min-w-0">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-            <DocumentoWordPage doc={docView.doc} onBack={() => setDocView(null)} />
           </div>
         </main>
       </div>
@@ -175,9 +160,6 @@ function Shell() {
             documentoFiltro={documentoFiltro}
             onOpenDocumentoNovo={(funcionarioId) => setDocView({ kind: 'novo', funcionarioId })}
             onOpenDocumentoEditar={(doc) => setDocView({ kind: 'editar', doc })}
-            onOpenDocumentoPdf={(doc) => setDocView({ kind: 'editar-pdf', doc })}
-            onOpenDocumentoImagem={(doc) => setDocView({ kind: 'editar-imagem', doc })}
-            onOpenDocumentoWord={(doc) => setDocView({ kind: 'editar-word', doc })}
           />
         </div>
       </main>

@@ -16,6 +16,7 @@
 import {
   collection,
   doc,
+  getDoc,
   updateDoc,
   deleteDoc,
   setDoc,
@@ -89,13 +90,22 @@ export async function updateDocumento(funcionarioId, docId, data) {
   if (!isFirebaseConfigured || !db) {
     throw new Error('Firebase não configurado.')
   }
+  const refDoc = doc(db, COLLECTIONS.DOCUMENTOS, docId)
+  // Registro atual completo, para o webhook enviar todos os dados.
+  let registroAtual = {}
+  try {
+    const snap = await getDoc(refDoc)
+    if (snap.exists()) registroAtual = snap.data() ?? {}
+  } catch {
+    /* segue com os dados do formulário caso a leitura falhe */
+  }
   const payload = {
     ...serializeDocumento(data),
     _atualizadoEm: serverTimestamp(),
   }
-  await updateDoc(doc(db, COLLECTIONS.DOCUMENTOS, docId), payload)
-  // Notifica o webhook externo (fire-and-forget)
-  notifyDocumentEvent('atualizado', funcionarioId, { id: docId, ...serializeDocumento(data) })
+  await updateDoc(refDoc, payload)
+  // Notifica o webhook externo (fire-and-forget) com o registro completo
+  notifyDocumentEvent('atualizado', funcionarioId, { id: docId, ...registroAtual, ...serializeDocumento(data) })
 }
 
 /**
