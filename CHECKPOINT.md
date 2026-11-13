@@ -218,4 +218,4 @@ git diff
 - Navegação: sem react-router; views internas via estado no `Shell` (App.jsx)
 - Arquivos binários: Cloudinary (pastas `funcionarios`, `documentos`)
 - Geração de modelos de documentos: `scripts/generate-modelos.js`
-  (docxtemplater + jszip, apenas no servidor).
+  (docxtemplater + jszip, apenas no servidor)
