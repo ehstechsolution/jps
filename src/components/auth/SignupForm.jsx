@@ -1,104 +1,111 @@
 // ------------------------------------------------------------------
 // src/components/auth/SignupForm.jsx
 // ------------------------------------------------------------------
-// Formulário de auto-cadastro: nome*, e-mail*, WhatsApp (opcional),
-// senha + confirmação* com medidor de força e nota de consentimento.
-//
-// Ao concluir, o AuthContext cria a conta no Firebase Auth, grava o
-// registro em `funcionarios` (Operacional/Ativo/Externo) e faz login
-// automático.
+// Ativa uma conta para um convite existente, sem criar um segundo perfil
+// de funcionário. O token do convite é validado no serviço Firebase.
 // ------------------------------------------------------------------
-import { useState } from 'react'
-import { User, Mail, Phone, LockKeyhole, Eye, EyeOff, Loader2, UserPlus } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Mail, LockKeyhole, Eye, EyeOff, Loader2, UserPlus } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import AuthField from './AuthField'
 import PasswordStrength from './PasswordStrength'
-import { maskPhone } from '@/utils/masks'
-import { isRequired, isValidEmail } from '@/utils/validators'
+import { getFuncionarioInvite } from '@/services/funcionarioService'
 
-export default function SignupForm() {
+export default function SignupForm({ inviteToken }) {
   const { register } = useAuth()
-
-  const [nome, setNome] = useState('')
-  const [email, setEmail] = useState('')
-  const [whatsapp, setWhatsapp] = useState('')
+  const [invite, setInvite] = useState(null)
+  const [inviteError, setInviteError] = useState('')
+  const [loadingInvite, setLoadingInvite] = useState(true)
   const [senha, setSenha] = useState('')
   const [confirma, setConfirma] = useState('')
   const [show, setShow] = useState(false)
-
   const [error, setError] = useState('')
-  const [fieldErrors, setFieldErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
 
+  useEffect(() => {
+    let active = true
+    setLoadingInvite(true)
+    setInviteError('')
+    getFuncionarioInvite(inviteToken)
+      .then((data) => {
+        if (active) setInvite(data)
+      })
+      .catch((err) => {
+        if (active) setInviteError(err?.message ?? 'Convite inválido ou expirado.')
+      })
+      .finally(() => {
+        if (active) setLoadingInvite(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [inviteToken])
+
   function validate() {
-    const errs = {}
-    if (!isRequired(nome)) errs.nome = 'Informe seu nome completo.'
-    if (!isRequired(email)) errs.email = 'Informe um e-mail.'
-    else if (!isValidEmail(email)) errs.email = 'E-mail inválido.'
-    if (!isRequired(senha)) errs.senha = 'Crie uma senha.'
-    else if (senha.length < 8) errs.senha = 'Use pelo menos 8 caracteres.'
-    if (confirma !== senha) errs.confirma = 'As senhas não conferem.'
-    setFieldErrors(errs)
-    return Object.keys(errs).length === 0
+    if (!senha || senha.length < 8) {
+      setError('Use uma senha com pelo menos 8 caracteres.')
+      return false
+    }
+    if (confirma !== senha) {
+      setError('As senhas não conferem.')
+      return false
+    }
+    setError('')
+    return true
   }
 
   async function handleSubmit(e) {
     e.preventDefault()
-    if (!validate()) return
-    setError('')
+    if (!invite || !validate()) return
     setSubmitting(true)
+    setError('')
     try {
-      await register({ nome: nome.trim(), email: email.trim(), password: senha, whatsapp })
-      // Sucesso -> o AuthContext troca para o app automaticamente.
+      await register({
+        nome: invite.nome,
+        email: invite.email,
+        password: senha,
+        inviteToken,
+      })
     } catch (err) {
-      setError(err?.message ?? 'Não foi possível criar a conta.')
+      setError(err?.message ?? 'Não foi possível ativar o acesso.')
     } finally {
       setSubmitting(false)
     }
   }
 
+  if (loadingInvite) {
+    return (
+      <div className="flex items-center justify-center gap-2 py-8 text-sm text-slate-500">
+        <Loader2 size={16} className="animate-spin" />
+        Validando convite...
+      </div>
+    )
+  }
+
+  if (inviteError || !invite) {
+    return (
+      <div className="rounded-xl border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300">
+        {inviteError || 'Convite inválido ou expirado. Solicite um novo à administração.'}
+      </div>
+    )
+  }
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-      {error && (
+      {(error || inviteError) && (
         <div className="rounded-xl border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300">
-          {error}
+          {error || inviteError}
         </div>
       )}
 
-      <AuthField
-        label="Nome completo"
-        icon={User}
-        type="text"
-        placeholder="Ex.: João da Silva"
-        value={nome}
-        onChange={(e) => setNome(e.target.value)}
-        autoComplete="name"
-        error={fieldErrors.nome}
-        required
-      />
-
-      <AuthField
-        label="E-mail"
-        icon={Mail}
-        type="email"
-        placeholder="voce@jpssteel.com.br"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        autoComplete="email"
-        error={fieldErrors.email}
-        required
-      />
-
-      <AuthField
-        label="WhatsApp (opcional)"
-        icon={Phone}
-        type="tel"
-        placeholder="(31) 99999-9999"
-        value={whatsapp}
-        onChange={(e) => setWhatsapp(maskPhone(e.target.value))}
-        autoComplete="tel"
-        inputMode="numeric"
-      />
+      <div className="rounded-xl border border-slate-200 dark:border-graphite-700 bg-white/70 dark:bg-graphite-850 px-4 py-3">
+        {invite.nome && <p className="font-semibold">{invite.nome}</p>}
+        <p className="flex items-center gap-2 mt-1 text-sm text-slate-500 dark:text-slate-400">
+          <Mail size={15} />
+          {invite.email}
+        </p>
+      </div>
 
       <div>
         <AuthField
@@ -109,12 +116,12 @@ export default function SignupForm() {
           value={senha}
           onChange={(e) => setSenha(e.target.value)}
           autoComplete="new-password"
-          error={fieldErrors.senha}
+          error={error && senha.length < 8 ? error : ''}
           required
           trailing={
             <button
               type="button"
-              onClick={() => setShow((v) => !v)}
+              onClick={() => setShow((value) => !value)}
               className="grid place-items-center h-8 w-8 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
               aria-label={show ? 'Ocultar senha' : 'Mostrar senha'}
             >
@@ -133,19 +140,17 @@ export default function SignupForm() {
         value={confirma}
         onChange={(e) => setConfirma(e.target.value)}
         autoComplete="new-password"
-        error={fieldErrors.confirma}
+        error={error && confirma !== senha ? error : ''}
         required
       />
 
       <button type="submit" className="btn-primary w-full justify-center py-2.5" disabled={submitting}>
         {submitting ? <Loader2 size={16} className="animate-spin" /> : <UserPlus size={16} />}
-        {submitting ? 'Criando sua conta...' : 'Criar minha conta'}
+        {submitting ? 'Ativando acesso...' : 'Criar acesso'}
       </button>
 
       <p className="text-[11px] leading-relaxed text-slate-400">
-        Seu acesso será criado como <strong>Operacional</strong> com permissão inicial{' '}
-        <strong>Externo</strong>. A administração da JPS Steel pode complementar seus dados
-        profissionais e ajustar o nível de acesso.
+        Este convite vincula seu acesso ao perfil e aos documentos SST associados ao funcionário acima.
       </p>
     </form>
   )

@@ -1,0 +1,177 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/roles/$(request.auth.uid))
+        && get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function employeePath(funcionarioId) {
+      return /databases/$(database)/documents/funcionarios/$(funcionarioId);
+    }
+
+    function invitePath(inviteId) {
+      return /databases/$(database)/documents/funcionario_invites/$(inviteId);
+    }
+
+    function ownsEmployee(funcionarioId) {
+      return signedIn()
+        && exists(employeePath(funcionarioId))
+        && get(employeePath(funcionarioId)).data.uid == request.auth.uid;
+    }
+
+    function validInviteForClaim(inviteId, funcionarioId, email) {
+      return signedIn()
+        && exists(invitePath(inviteId))
+        && get(invitePath(inviteId)).data.funcionarioId == funcionarioId
+        && get(invitePath(inviteId)).data.email == email
+        && email == request.auth.token.email
+        && get(invitePath(inviteId)).data.status == 'pending'
+        && get(invitePath(inviteId)).data.expiresAt > request.time;
+    }
+
+    function mayReadPendingEmployee(funcionarioId) {
+      return signedIn()
+        && !('uid' in resource.data)
+        && resource.data.email == request.auth.token.email
+        && resource.data.inviteId is string
+        && validInviteForClaim(
+          resource.data.inviteId,
+          funcionarioId,
+          resource.data.email
+        );
+    }
+
+    function employeeIdentityAndRoleUnchanged() {
+      return ('uid' in resource.data) == ('uid' in request.resource.data)
+        && (!('uid' in resource.data) || resource.data.uid == request.resource.data.uid)
+        && ('role' in resource.data) == ('role' in request.resource.data)
+        && (!('role' in resource.data) || resource.data.role == request.resource.data.role);
+    }
+
+    // Roles são seedados por um operador confiável, fora do cliente.
+    // Não conceda permissão de escrita a usuários do frontend nesta coleção.
+    match /roles/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow list: if false;
+      allow create, update, delete: if false;
+    }
+
+    // O ID do documento é SHA-256 do token de alta entropia. Um cliente pode
+    // somente ler um documento conhecido por ID; listagens ficam sempre negadas.
+    match /funcionario_invites/{inviteId} {
+      allow get: if true;
+      allow list: if false;
+
+      allow create: if isAdmin()
+        && request.resource.data.keys().hasOnly(['email', 'funcionarioId', 'expiresAt', 'status'])
+        && request.resource.data.email is string
+        && request.resource.data.email.matches('^[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}$')
+        && request.resource.data.funcionarioId is string
+        && request.resource.data.expiresAt is timestamp
+        && request.resource.data.expiresAt > request.time
+        && request.resource.data.status == 'pending'
+        && getAfter(employeePath(request.resource.data.funcionarioId)).data.email == request.resource.data.email
+        && getAfter(employeePath(request.resource.data.funcionarioId)).data.inviteId == inviteId
+        && !('uid' in getAfter(employeePath(request.resource.data.funcionarioId)).data);
+
+      // Consumo estritamente de pending para consumed, junto com a associação
+      // do UID ao funcionário correspondente na mesma transação.
+      allow update: if (
+          signedIn()
+          && resource.data.status == 'pending'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+          && request.resource.data.status == 'consumed'
+          && resource.data.email == request.auth.token.email
+          && resource.data.expiresAt > request.time
+          && getAfter(employeePath(resource.data.funcionarioId)).data.uid == request.auth.uid
+          && getAfter(employeePath(resource.data.funcionarioId)).data.inviteId == inviteId
+          && getAfter(employeePath(resource.data.funcionarioId)).data.email == resource.data.email
+        ) || (
+          isAdmin()
+          && resource.data.status == 'pending'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+          && request.resource.data.status == 'revoked'
+          && getAfter(employeePath(resource.data.funcionarioId)).data.inviteId != inviteId
+          && !('uid' in getAfter(employeePath(resource.data.funcionarioId)).data)
+        );
+
+      allow delete: if false;
+    }
+
+    match /funcionarios/{funcionarioId} {
+      allow get: if isAdmin()
+        || (signedIn() && resource.data.uid == request.auth.uid)
+        || mayReadPendingEmployee(funcionarioId);
+      allow list: if isAdmin()
+        || (signedIn() && resource.data.uid == request.auth.uid);
+
+      // Novos registros de funcionário não podem ser criados já associados a
+      // quem os cadastrou. A associação ocorre exclusivamente no claim.
+      allow create: if isAdmin()
+        && !('uid' in request.resource.data)
+        && !('role' in request.resource.data);
+
+      // UIDs legados atribuídos incorretamente devem ser revisados e
+      // desvinculados por Console Firebase/Admin SDK confiável; o cliente não
+      // pode corrigir UID/role por uma atualização comum.
+      allow update: if (isAdmin() && employeeIdentityAndRoleUnchanged())
+        || (
+          signedIn()
+          && !('uid' in resource.data)
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.inviteId == resource.data.inviteId
+          && request.resource.data.email == request.auth.token.email
+          && resource.data.inviteId is string
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uid'])
+          && validInviteForClaim(
+            request.resource.data.inviteId,
+            funcionarioId,
+            resource.data.email
+          )
+          && getAfter(invitePath(request.resource.data.inviteId)).data.status == 'consumed'
+        );
+
+      allow delete: if isAdmin();
+    }
+
+    match /documentos/{documentoId} {
+      allow get, list: if isAdmin()
+        || ownsEmployee(resource.data.idFuncionarioTitular);
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Dados operacionais e configurações globais só ficam disponíveis
+    // para administradores autenticados.
+    match /config/{configId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /clientes/{clienteId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /orcamentos_e_os/{osId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /gastos/{gastoId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /equipamentos/{equipamentoId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Coleções sem regra específica não são acessíveis pelo cliente.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

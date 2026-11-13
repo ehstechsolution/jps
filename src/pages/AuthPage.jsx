@@ -4,11 +4,10 @@
 // Tela de acesso Executivo "Dark Industrial" da JPS Steel.
 // - Layout dividido: painel de marca (esquerda, sempre escuro) + painel
 //   do formulário (direita, respeita o tema).
-// - Alternador de abas animado: Login | Cadastro.
+// - Login normal ou ativação de convite por token.
 // - No mobile o painel de marca vira uma faixa superior compacta.
 // ------------------------------------------------------------------
-import { useState } from 'react'
-import { LayoutDashboard, LogIn, UserPlus } from 'lucide-react'
+import { LayoutDashboard } from 'lucide-react'
 import BrandPanel from '@/components/auth/BrandPanel'
 import LoginForm from '@/components/auth/LoginForm'
 import SignupForm from '@/components/auth/SignupForm'
@@ -16,15 +15,15 @@ import ThemeToggle from '@/components/ThemeToggle'
 import logoLocal from '@/assets/logo.png'
 import { useConfig } from '@/context/ConfigContext'
 
-const TABS = [
-  { key: 'login', label: 'Entrar', icon: LogIn },
-  { key: 'signup', label: 'Cadastrar', icon: UserPlus },
-]
-
 export default function AuthPage() {
   const { empresaLogo } = useConfig()
   const logo = empresaLogo || logoLocal
-  const [tab, setTab] = useState('login')
+  const inviteToken = (
+    new URLSearchParams(window.location.hash.slice(1)).get('convite') ||
+    new URLSearchParams(window.location.search).get('convite') ||
+    ''
+  ).trim()
+  const hasInvite = Boolean(inviteToken)
 
   return (
     <div className="min-h-screen lg:flex bg-slate-50 dark:bg-graphite-900 text-slate-900 dark:text-slate-100">
@@ -52,42 +51,31 @@ export default function AuthPage() {
         {/* Formulário */}
         <div className="flex-1 flex items-center justify-center px-5 sm:px-8 lg:py-8 pb-12">
           <div className="w-full max-w-md animate-fade-up">
-            {/* Título conforme a aba */}
+            {/* Título conforme o fluxo */}
             <div className="flex items-center gap-2 text-steel-600 dark:text-steel-400">
               <LayoutDashboard size={18} />
               <span className="text-xs font-semibold uppercase tracking-[0.22em]">Painel</span>
             </div>
             <h1 className="display-font mt-2 text-2xl sm:text-3xl font-extrabold tracking-tight">
-              {tab === 'login' ? 'Bem-vindo de volta' : 'Crie seu acesso'}
+              {hasInvite ? 'Ative seu acesso' : 'Bem-vindo de volta'}
             </h1>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              {tab === 'login'
-                ? 'Entre com suas credenciais para acessar o sistema.'
-                : 'Preencha seus dados para começar a usar o sistema.'}
+              {hasInvite
+                ? 'Crie uma senha para acessar o perfil de funcionário associado a este convite.'
+                : 'Entre com suas credenciais para acessar o sistema.'}
             </p>
 
-            {/* Alternador de abas */}
-            <div className="mt-6 grid grid-cols-2 gap-1 rounded-2xl bg-slate-200/80 dark:bg-graphite-850 p-1">
-              {TABS.map(({ key, label, icon: Icon }) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setTab(key)}
-                  className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all
-                    ${tab === key
-                      ? 'bg-white dark:bg-graphite-800 text-steel-700 dark:text-steel-300 shadow-sm'
-                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
-                    }`}
-                >
-                  <Icon size={15} />
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            {/* Formulário ativo */}
-            <div className="mt-6" key={tab}>
-              {tab === 'login' ? <LoginForm /> : <SignupForm />}
+            <div className="mt-6">
+              {hasInvite ? (
+                <SignupForm inviteToken={inviteToken} />
+              ) : (
+                <>
+                  <LoginForm />
+                  <p className="mt-5 text-center text-xs text-slate-400">
+                    O cadastro é feito por convite enviado pela administração.
+                  </p>
+                </>
+              )}
             </div>
           </div>
         </div>

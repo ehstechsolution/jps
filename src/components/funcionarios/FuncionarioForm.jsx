@@ -5,7 +5,7 @@
 //
 // Seções:
 //   - Foto (upload Cloudinary)
-//   - Dados Pessoais  -> nome*, e-mail, foto, nascimento, CPF, RG,
+//   - Dados Pessoais  -> nome*, e-mail* (necessário no novo cadastro), foto, nascimento, CPF, RG,
 //                        WhatsApp, endereço (com busca de CEP via ViaCEP),
 //                        escolaridade* (dropdown da config)
 //   - Dados Profissionais -> cargo* (dropdown da config + texto livre),
@@ -21,7 +21,8 @@ import PhotoUpload from '@/components/funcionarios/PhotoUpload'
 import { useConfig } from '@/context/ConfigContext'
 import { useAuth } from '@/context/AuthContext'
 import { SETORES, NIVEIS_ACESSO } from '@/services/configService'
-import { createFuncionario, updateFuncionario } from '@/services/funcionarioService'
+import { createFuncionarioInvite, updateFuncionario } from '@/services/funcionarioService'
+import { sendFuncionarioInvite } from '@/services/webhookService'
 import { onlyDigits, maskCPF, maskPhone, maskDate, maskCEP, maskPIS } from '@/utils/masks'
 import {
   isRequired,
@@ -68,7 +69,8 @@ function buildEmptyForm(configLists) {
  */
 export default function FuncionarioForm({ open, onClose, funcionario, onSaved }) {
   const { configLists } = useConfig()
-  const { user, isAdmin } = useAuth()
+  const { isAdmin } = useAuth()
+  const emailLocked = Boolean(funcionario?.uid || funcionario?.inviteId)
 
   // Usa sempre as listas de config vigentes no momento em que o modal abre
   const listsRef = useRef(configLists)
@@ -81,6 +83,7 @@ export default function FuncionarioForm({ open, onClose, funcionario, onSaved })
   const [formError, setFormError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [buscandoCep, setBuscandoCep] = useState(false)
+  const [pendingInvite, setPendingInvite] = useState(null)
 
   // Ao abrir: carrega dados do registro existente ou zera o formulário
   useEffect(() => {
@@ -118,6 +121,7 @@ export default function FuncionarioForm({ open, onClose, funcionario, onSaved })
     }
     setErrors({})
     setFormError('')
+    setPendingInvite(null)
   }, [open, funcionario])
 
   /** Atualiza um campo raiz do formulário. */
@@ -159,6 +163,7 @@ export default function FuncionarioForm({ open, onClose, funcionario, onSaved })
   function validate() {
     const errs = {}
     if (!isRequired(form.nome)) errs.nome = 'Informe o nome completo.'
+    if (!funcionario && !isRequired(form.email)) errs.email = 'Informe o e-mail para enviar o convite de acesso.'
     if (form.email && !isValidEmail(form.email)) errs.email = 'E-mail inválido.'
     if (form.cpf && !isValidCpf(form.cpf)) errs.cpf = 'CPF inválido.'
     if (form.dataNascimento && !isValidBrDate(form.dataNascimento)) errs.dataNascimento = 'Data inválida.'
@@ -174,9 +179,10 @@ export default function FuncionarioForm({ open, onClose, funcionario, onSaved })
   /** Salva (cria ou atualiza) o funcionário. */
   async function handleSubmit(e) {
     e.preventDefault()
-    if (!validate()) return
+    if (!pendingInvite && !validate()) return
     setSubmitting(true)
     setFormError('')
+    let inviteRequest = pendingInvite
     try {
       const payload = {
         ...form,
@@ -186,12 +192,28 @@ export default function FuncionarioForm({ open, onClose, funcionario, onSaved })
       if (funcionario) {
         await updateFuncionario(funcionario.id, payload)
       } else {
-        await createFuncionario(payload, user?.uid)
+        if (!inviteRequest) {
+          const invitation = await createFuncionarioInvite(payload)
+          const inviteUrl = new URL('/', window.location.origin)
+          inviteUrl.hash = new URLSearchParams({ convite: invitation.inviteToken }).toString()
+          inviteRequest = {
+            email: invitation.email,
+            nome: invitation.nome,
+            inviteUrl: inviteUrl.toString(),
+            expiresAt: invitation.expiresAt,
+          }
+          setPendingInvite(inviteRequest)
+        }
+        await sendFuncionarioInvite(inviteRequest)
       }
       onSaved?.()
       onClose()
     } catch (err) {
-      setFormError(err?.message ?? 'Não foi possível salvar.')
+      setFormError(
+        inviteRequest
+          ? `Funcionário salvo, mas o convite não foi enviado: ${err?.message ?? 'falha no webhook'}. Tente novamente.`
+          : err?.message ?? 'Não foi possível salvar.'
+      )
     } finally {
       setSubmitting(false)
     }
@@ -211,7 +233,7 @@ export default function FuncionarioForm({ open, onClose, funcionario, onSaved })
           </button>
           <button type="submit" form="funcionario-form" className="btn-primary" disabled={submitting}>
             {submitting ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-            {submitting ? 'Salvando...' : 'Salvar'}
+            {submitting ? (pendingInvite ? 'Enviando convite...' : 'Salvando...') : (pendingInvite ? 'Reenviar convite' : 'Salvar')}
           </button>
         </>
       }
@@ -236,8 +258,19 @@ export default function FuncionarioForm({ open, onClose, funcionario, onSaved })
             <Field label="Nome completo *" error={errors.nome}>
               <input className="input" value={form.nome} onChange={setField('nome')} placeholder="Ex.: João da Silva" />
             </Field>
-            <Field label="E-mail" error={errors.email}>
-              <input type="email" className="input" value={form.email} onChange={setField('email')} placeholder="exemplo@jpssteel.com.br" />
+            <Field
+              label={funcionario ? 'E-mail' : 'E-mail *'}
+              error={errors.email}
+              hint={emailLocked ? 'O e-mail está vinculado ao acesso ou a um convite pendente. Contate o suporte para alterá-lo.' : ''}
+            >
+              <input
+                type="email"
+                className="input"
+                value={form.email}
+                onChange={setField('email')}
+                placeholder="exemplo@jpssteel.com.br"
+                disabled={emailLocked}
+              />
             </Field>
             <Field label="Data de nascimento" error={errors.dataNascimento}>
               <input className="input" value={form.dataNascimento} onChange={(e) => setForm((prev) => ({ ...prev, dataNascimento: maskDate(e.target.value) }))} placeholder="DD/MM/AAAA" inputMode="numeric" />

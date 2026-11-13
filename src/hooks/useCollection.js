@@ -11,12 +11,21 @@ import { subscribeCollection } from '@/services/firestore'
  * @param {string} path  Caminho da coleção (ex.: "funcionarios")
  * @returns {{ data: Array, loading: boolean, error: Error | null }}
  */
-export function useCollection(path) {
+export function useCollection(path, enabled = true) {
   const [data, setData] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(Boolean(enabled))
   const [error, setError] = useState(null)
 
   useEffect(() => {
+    if (!enabled) {
+      setData([])
+      setError(null)
+      setLoading(false)
+      return undefined
+    }
+
+    setLoading(true)
+    setError(null)
     const cancel = subscribeCollection(
       path,
       (docs) => {
@@ -29,7 +38,7 @@ export function useCollection(path) {
       }
     )
     return cancel
-  }, [path])
+  }, [path, enabled])
 
   return { data, loading, error }
 }

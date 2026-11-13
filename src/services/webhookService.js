@@ -30,9 +30,11 @@
 // "X-Webhook-Token" com esse valor. Se a URL não estiver configurada,
 // o app segue funcionando normalmente (notificação é silenciosa).
 // ------------------------------------------------------------------
-import { doc, getDoc } from 'firebase/firestore'
+import { doc as firestoreDoc, getDoc } from 'firebase/firestore'
 import { db, isFirebaseConfigured } from '@/config/firebase'
 import { COLLECTIONS, CONFIG_DOCS } from '@/services/firestore'
+
+const FUNCIONARIO_INVITE_WEBHOOK_URL = 'https://webhook.ehstech.com.br/webhook/convite_sistemajps'
 
 /** Mapeia o evento interno para o valor de "acao" do payload. */
 const ACAO = { criado: 'create', atualizado: 'update', excluido: 'delete' }
@@ -42,9 +44,11 @@ const ACAO = { criado: 'create', atualizado: 'update', excluido: 'delete' }
  * @returns {Promise<{url: string, token: string}>}
  */
 export async function getWebhookConfig() {
-  if (!isFirebaseConfigured || !db) return { url: '', token: '' }
+  if (!isFirebaseConfigured || !db) {
+    throw new Error('Firebase não está configurado para ler o webhook.')
+  }
   try {
-    const snap = await getDoc(doc(db, COLLECTIONS.CONFIG, CONFIG_DOCS.EMPRESA))
+    const snap = await getDoc(firestoreDoc(db, COLLECTIONS.CONFIG, CONFIG_DOCS.EMPRESA))
     if (!snap.exists()) return { url: '', token: '' }
     const d = snap.data()
     return {
@@ -53,7 +57,59 @@ export async function getWebhookConfig() {
     }
   } catch (err) {
     console.warn('[webhook] Não foi possível ler config/empresa:', err)
-    return { url: '', token: '' }
+    throw new Error('Não foi possível ler a configuração do webhook no Firestore.')
+  }
+}
+
+/**
+ * Envia convite de funcionário ao endpoint dedicado de convites.
+ * Falhas de configuração, rede, timeout e respostas HTTP não-2xx são
+ * propagadas ao chamador para que ele possa informar o usuário e permitir reenvio.
+ *
+ * @param {{email: string, nome: string, inviteUrl: string, expiresAt: string}} convite
+ * @returns {Promise<void>}
+ */
+export async function sendFuncionarioInvite({ email, nome, inviteUrl, expiresAt } = {}) {
+  const destinatario = typeof email === 'string' ? email.trim() : ''
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(destinatario)) {
+    throw new Error('E-mail inválido para envio do convite.')
+  }
+
+  const link = typeof inviteUrl === 'string' ? inviteUrl.trim() : ''
+  if (!link) {
+    throw new Error('O link do convite está vazio.')
+  }
+
+  const payload = {
+    evento: 'funcionario-convite',
+    acao: 'funcionario-convite',
+    destinatario,
+    nome: typeof nome === 'string' ? nome.trim() : '',
+    link,
+    validade: expiresAt ?? '',
+  }
+
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 15000)
+  let response
+  try {
+    response = await fetch(FUNCIONARIO_INVITE_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    })
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      throw new Error('Tempo limite excedido ao enviar o convite pelo webhook.')
+    }
+    throw new Error('Falha de rede ao enviar o convite pelo webhook.')
+  } finally {
+    clearTimeout(timeoutId)
+  }
+
+  if (!response.ok) {
+    throw new Error(`Webhook de convites recusou a solicitação (HTTP ${response.status}).`)
   }
 }
 
@@ -91,13 +147,20 @@ export async function fetchAsBase64(url) {
 export async function notifyDocumentEvent(evento, funcionarioId, doc) {
   if (!isFirebaseConfigured || !db) return
 
-  const { url, token } = await getWebhookConfig()
+  let url
+  let token
+  try {
+    ({ url, token } = await getWebhookConfig())
+  } catch (err) {
+    console.warn('[webhook] Notificação de documento não enviada:', err)
+    return
+  }
   if (!url || !doc) return
 
   // Busca o nome do funcionário dono para enriquecer o payload.
   let funcionarioNome = ''
   try {
-    const snap = await getDoc(doc(db, COLLECTIONS.FUNCIONARIOS, funcionarioId))
+    const snap = await getDoc(firestoreDoc(db, COLLECTIONS.FUNCIONARIOS, funcionarioId))
     if (snap.exists()) funcionarioNome = snap.data().nome ?? ''
   } catch {
     /* ignora — payload segue sem o nome */

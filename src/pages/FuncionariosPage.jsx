@@ -12,6 +12,7 @@ import {
   FileText,
   Power,
   RefreshCw,
+  Mail,
   Users,
   HardHat,
   Briefcase,
@@ -24,7 +25,8 @@ import { useCollection } from '@/hooks/useCollection'
 import { useConfig } from '@/context/ConfigContext'
 import { useAuth } from '@/context/AuthContext'
 import { formatDate } from '@/utils/format'
-import { setFuncionarioStatus } from '@/services/funcionarioService'
+import { renewFuncionarioInvite, setFuncionarioStatus } from '@/services/funcionarioService'
+import { sendFuncionarioInvite } from '@/services/webhookService'
 
 export default function FuncionariosPage({ onOpenMenu, onNavigate, onOpenDocumentosFuncionario }) {
   const { data: funcionarios, loading, error } = useCollection('funcionarios')
@@ -38,6 +40,9 @@ export default function FuncionariosPage({ onOpenMenu, onNavigate, onOpenDocumen
   // Estado do formulário (novo / edição)
   const [formState, setFormState] = useState({ open: false, funcionario: null })
   const [seedFeedback, setSeedFeedback] = useState('')
+  const [inviteFeedback, setInviteFeedback] = useState('')
+  const [inviteBusy, setInviteBusy] = useState({})
+  const [pendingInvites, setPendingInvites] = useState({})
 
   /** Lista filtrada e ordenada por nome. */
   const filtered = useMemo(() => {
@@ -76,6 +81,44 @@ export default function FuncionariosPage({ onOpenMenu, onNavigate, onOpenDocumen
     }
   }
 
+  /** Envia ou renova o convite sem criar outro registro de funcionário. */
+  async function handleSendInvite(funcionario) {
+    const pending = pendingInvites[funcionario.id]
+    if (!pending && funcionario.inviteId && !window.confirm(
+      `Gerar um novo convite para ${funcionario.nome}? O link anterior deixará de funcionar.`
+    )) return
+
+    setInviteFeedback('')
+    setInviteBusy((current) => ({ ...current, [funcionario.id]: true }))
+    try {
+      let request = pending
+      if (!request) {
+        const invitation = await renewFuncionarioInvite(funcionario.id)
+        const inviteUrl = new URL('/', window.location.origin)
+        inviteUrl.hash = new URLSearchParams({ convite: invitation.inviteToken }).toString()
+        request = {
+          email: invitation.email,
+          nome: invitation.nome,
+          inviteUrl: inviteUrl.toString(),
+          expiresAt: invitation.expiresAt,
+        }
+        setPendingInvites((current) => ({ ...current, [funcionario.id]: request }))
+      }
+
+      await sendFuncionarioInvite(request)
+      setInviteFeedback(`Convite enviado ao webhook para ${request.email}.`)
+      setPendingInvites((current) => {
+        const next = { ...current }
+        delete next[funcionario.id]
+        return next
+      })
+    } catch (err) {
+      setInviteFeedback(`Não foi possível enviar o convite de ${funcionario.nome}: ${err?.message ?? 'erro desconhecido'}`)
+    } finally {
+      setInviteBusy((current) => ({ ...current, [funcionario.id]: false }))
+    }
+  }
+
   /** Seed das listas padrão (config/funcionarios) — ação de admin. */
   async function handleSeed() {
     setSeedFeedback('')
@@ -108,10 +151,12 @@ export default function FuncionariosPage({ onOpenMenu, onNavigate, onOpenDocumen
                 Listas padrão
               </button>
             )}
-            <button onClick={() => setFormState({ open: true, funcionario: null })} className="btn-primary">
-              <UserPlus size={16} />
-              Novo Funcionário
-            </button>
+            {isAdmin && (
+              <button onClick={() => setFormState({ open: true, funcionario: null })} className="btn-primary">
+                <UserPlus size={16} />
+                Novo Funcionário
+              </button>
+            )}
           </>
         }
       />
@@ -119,6 +164,16 @@ export default function FuncionariosPage({ onOpenMenu, onNavigate, onOpenDocumen
       {seedFeedback && (
         <div className="mb-4 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300">
           {seedFeedback}
+        </div>
+      )}
+
+      {inviteFeedback && (
+        <div role="status" className={`mb-4 rounded-xl border px-4 py-3 text-sm ${
+          inviteFeedback.startsWith('Convite enviado')
+            ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
+            : 'bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-500/30 text-red-700 dark:text-red-300'
+        }`}>
+          {inviteFeedback}
         </div>
       )}
 
@@ -217,24 +272,41 @@ export default function FuncionariosPage({ onOpenMenu, onNavigate, onOpenDocumen
                         >
                           <FileText size={15} />
                         </button>
-                        <button
-                          onClick={() => setFormState({ open: true, funcionario: f })}
-                          className="grid place-items-center h-8 w-8 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-graphite-800 hover:text-steel-600 dark:hover:text-steel-400"
-                          title="Editar funcionário"
-                        >
-                          <Pencil size={15} />
-                        </button>
-                        <button
-                          onClick={() => handleToggleStatus(f)}
-                          className={`grid place-items-center h-8 w-8 rounded-lg hover:bg-slate-100 dark:hover:bg-graphite-800 ${
-                            String(f.status ?? '').toUpperCase() === 'ATIVO'
-                              ? 'text-red-500 hover:text-red-600'
-                              : 'text-emerald-500 hover:text-emerald-600'
-                          }`}
-                          title={String(f.status ?? '').toUpperCase() === 'ATIVO' ? 'Marcar como Desligado' : 'Reativar'}
-                        >
-                          <Power size={15} />
-                        </button>
+                        {isAdmin && (
+                          <>
+                            {!f.uid && (
+                              <button
+                                onClick={() => handleSendInvite(f)}
+                                disabled={Boolean(inviteBusy[f.id])}
+                                className="grid place-items-center h-8 w-8 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-graphite-800 hover:text-steel-600 dark:hover:text-steel-400 disabled:opacity-50"
+                                title={pendingInvites[f.id] ? 'Tentar enviar o convite novamente' : 'Enviar ou renovar convite de acesso'}
+                                aria-label={`${pendingInvites[f.id] ? 'Tentar novamente' : 'Enviar convite'} para ${f.nome}`}
+                              >
+                                {inviteBusy[f.id]
+                                  ? <RefreshCw size={15} className="animate-spin" />
+                                  : <Mail size={15} />}
+                              </button>
+                            )}
+                            <button
+                              onClick={() => setFormState({ open: true, funcionario: f })}
+                              className="grid place-items-center h-8 w-8 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-graphite-800 hover:text-steel-600 dark:hover:text-steel-400"
+                              title="Editar funcionário"
+                            >
+                              <Pencil size={15} />
+                            </button>
+                            <button
+                              onClick={() => handleToggleStatus(f)}
+                              className={`grid place-items-center h-8 w-8 rounded-lg hover:bg-slate-100 dark:hover:bg-graphite-800 ${
+                                String(f.status ?? '').toUpperCase() === 'ATIVO'
+                                  ? 'text-red-500 hover:text-red-600'
+                                  : 'text-emerald-500 hover:text-emerald-600'
+                              }`}
+                              title={String(f.status ?? '').toUpperCase() === 'ATIVO' ? 'Marcar como Desligado' : 'Reativar'}
+                            >
+                              <Power size={15} />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -258,8 +330,7 @@ export default function FuncionariosPage({ onOpenMenu, onNavigate, onOpenDocumen
       {/* Nota quando o e-mail logado não tem perfil */}
       {!isAdmin && (
         <p className="text-xs text-slate-400 mt-4">
-          Nota: seu perfil não é Administrativo, então o campo "nível de acesso" não aparece no cadastro.
-          As opções de status seguem as listas configuradas no sistema.
+          Apenas usuários administrativos podem cadastrar, editar ou alterar o status dos funcionários.
         </p>
       )}
     </div>

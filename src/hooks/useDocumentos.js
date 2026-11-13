@@ -10,7 +10,8 @@
 //  - Firebase não configurado -> dados fictícios (modo demo).
 // ------------------------------------------------------------------
 import { useEffect, useState, useCallback } from 'react'
-import { isFirebaseConfigured } from '@/config/firebase'
+import { collection, onSnapshot, query, where } from 'firebase/firestore'
+import { db, isFirebaseConfigured } from '@/config/firebase'
 import { subscribeCollection, COLLECTIONS } from '@/services/firestore'
 import { fetchMockDashboardData } from '@/services/mockData'
 import { normalizeDate } from '@/utils/format'
@@ -106,5 +107,76 @@ export function useDocumentos() {
 
   const refresh = useCallback(() => setReloadKey((k) => k + 1), [])
 
+  return { docs: state.docs, loading: state.loading, error: state.error, refresh }
+}
+
+/**
+ * Escuta somente os documentos vinculados à ficha informada.
+ * A restrição é aplicada na consulta Firestore; não carrega a coleção inteira
+ * para filtrar os registros do funcionário no navegador.
+ *
+ * @param {string|null|undefined} funcionarioId id da ficha associada ao perfil
+ * @param {object|null} funcionario dados já presentes em userProfile
+ * @returns {{ docs: Array, loading: boolean, error: Error|null, refresh: Function }}
+ */
+export function useDocumentosFuncionario(funcionarioId, funcionario) {
+  const [state, setState] = useState({ docs: [], loading: Boolean(funcionarioId), error: null })
+  const [reloadKey, setReloadKey] = useState(0)
+
+  useEffect(() => {
+    let active = true
+    setState({ docs: [], loading: Boolean(funcionarioId), error: null })
+
+    if (!funcionarioId) return undefined
+
+    if (!isFirebaseConfigured) {
+      fetchMockDashboardData()
+        .then((mock) => {
+          if (!active) return
+          const owner = (mock.funcionarios ?? []).find((item) => item.id === funcionarioId)
+          const docs = (owner?.documentos_sst ?? []).map((doc) =>
+            enrichDoc({ ...doc, idFuncionarioTitular: funcionarioId }, funcionario ?? owner)
+          )
+          setState({ docs, loading: false, error: null })
+        })
+        .catch((error) => {
+          if (active) setState({ docs: [], loading: false, error })
+        })
+      return () => {
+        active = false
+      }
+    }
+
+    if (!db) {
+      setState({ docs: [], loading: false, error: new Error('Firebase não está disponível.') })
+      return undefined
+    }
+
+    const docsQuery = query(
+      collection(db, COLLECTIONS.DOCUMENTOS),
+      where('idFuncionarioTitular', '==', funcionarioId)
+    )
+    const unsubscribe = onSnapshot(
+      docsQuery,
+      (snapshot) => {
+        if (!active) return
+        const docs = snapshot.docs.map((snapshotDoc) => {
+          const doc = { id: snapshotDoc.id, ...snapshotDoc.data() }
+          return enrichDoc(doc, funcionario)
+        })
+        setState({ docs, loading: false, error: null })
+      },
+      (error) => {
+        if (active) setState((previous) => ({ ...previous, loading: false, error }))
+      }
+    )
+
+    return () => {
+      active = false
+      unsubscribe()
+    }
+  }, [funcionarioId, funcionario, reloadKey])
+
+  const refresh = useCallback(() => setReloadKey((key) => key + 1), [])
   return { docs: state.docs, loading: state.loading, error: state.error, refresh }
 }

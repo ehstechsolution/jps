@@ -1,13 +1,23 @@
 # Checkpoint — JPS Steel Backoffice
-> Atualizado em 2026-09-18
+> Atualizado em 2026-11-13
 
 ## Estado atual do projeto
-- **Build**: ✅ OK (vite build, chunks code-split corretamente)
-- **Dev server**: rodando em `http://localhost:5173` (reiniciar com `npm run dev`)
+- **Build**: não revalidado após a implementação dos convites de funcionário
 - **Banco**: Firebase `jps-2027` (reais) + Cloudinary `drqdkypcv`/`jpsUploads`
-- **Autenticação**: login/cadastro funcional, perfil admin básico
-- **Alterações pendentes (working tree)**: remoção completa dos editores
-  (ver seção "Sessão atual" — ainda não commitadas)
+- **Autenticação**: login por e-mail/senha; novas contas exigem convite de funcionário
+- **Convites**: token aleatório de uso único (7 dias), guardado no Firestore somente como hash;
+  link da aplicação (`#convite=...`) enviado por POST ao endpoint dedicado
+  `https://webhook.ehstech.com.br/webhook/convite_sistemajps` no evento
+  `funcionario-convite`; o funcionário define a própria senha ao abrir
+- **Autoatendimento**: perfis sem papel administrativo veem apenas a própria ficha
+  e documentos; acesso amplo exige papel explícito em `roles/{uid}`
+- **Regras Firestore**: fonte em `firestore.rules`, associada em `firebase.json`;
+  ainda precisam ser revisadas/configuradas e implantadas no Firebase
+- **Arquivos SST**: regras do Firestore limitam a listagem, mas URLs do Cloudinary
+  atuais podem ser públicas para quem já possui o link
+- **Atenção**: administradores precisam de `roles/{uid}` com `{ role: "admin" }`,
+  criado por operador confiável no Console Firebase. Registros antigos podem conter
+  o UID do admin incorretamente gravado e exigem revisão manual antes do vínculo.
 
 ---
 
@@ -162,29 +172,17 @@ adiciona: `id_funcionario`, `funcionario_nome`, `funcionario_cargo`,
 
 ---
 
-## Firestore Rules (pendente — aplicar quando ativar o Firebase)
+## Firestore Rules
 
-```js
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    // Config global (empresa, tipos, etc.)
-    match /config/{doc} {
-      allow read, write: if request.auth != null;
-    }
+As regras atuais estão em [`firestore.rules`](./firestore.rules) e o arquivo é
+referenciado por [`firebase.json`](./firebase.json). **Não implante o exemplo
+permissivo antigo** que concedia leitura e escrita a qualquer usuário
+autenticado. Revise as regras com os papéis e fluxos reais antes de implantá-las.
 
-    // Funcionários
-    match /funcionarios/{id} {
-      allow read, write: if request.auth != null;
-    }
-
-    // Documentos (coleção plana)
-    match /documentos/{id} {
-      allow read, write: if request.auth != null;
-    }
-  }
-}
-```
+Para bootstrap, use o UID do administrador no Firebase Authentication e crie
+manualmente no Firestore `roles/{uid}` com `{ role: "admin" }`. A coleção `roles`
+não pode ser escrita pelo cliente. UIDs legados atribuídos ao funcionário errado
+devem ser corrigidos no Console Firebase por operador confiável, após conferência.
 
 ---
 

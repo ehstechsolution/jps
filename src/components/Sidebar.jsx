@@ -16,6 +16,7 @@ import {
   X,
   Building2,
   LogOut,
+  UserRound,
 } from 'lucide-react'
 import logoLocal from '@/assets/logo.png'
 import { useConfig } from '@/context/ConfigContext'
@@ -31,6 +32,11 @@ export const MENU_ITEMS = [
   { key: 'equipamentos', label: 'Equipamentos', subtitle: 'Frota e patrimônio', icon: Cog },
 ]
 
+const SELF_SERVICE_ITEMS = [
+  { key: 'meu-perfil', label: 'Meu Perfil', subtitle: 'Minha ficha', icon: UserRound },
+  { key: 'meus-documentos', label: 'Meus Documentos', subtitle: 'Documentos SST', icon: FileText },
+]
+
 /**
  * Sidebar da aplicação.
  * @param {object} props
@@ -39,10 +45,11 @@ export const MENU_ITEMS = [
  * @param {Function} props.onClose     Fecha o drawer (mobile)
  * @param {boolean}  props.open        Se o drawer mobile está visível
  */
-export default function Sidebar({ activePage, onNavigate, onClose, open }) {
+export default function Sidebar({ activePage, onNavigate, onClose, open, restricted = false }) {
   const { empresaLogo } = useConfig()
   const { userProfile, logout } = useAuth()
   const logo = empresaLogo || logoLocal
+  const menuItems = restricted ? SELF_SERVICE_ITEMS : MENU_ITEMS
   return (
     <>
       {/* Overlay para fechar o drawer no mobile */}
@@ -86,7 +93,7 @@ export default function Sidebar({ activePage, onNavigate, onClose, open }) {
 
         {/* Menu principal */}
         <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1" aria-label="Menu principal">
-          {MENU_ITEMS.map((item) => {
+          {menuItems.map((item) => {
             const Icon = item.icon
             const isActive = activePage === item.key
             return (
@@ -143,16 +150,16 @@ export default function Sidebar({ activePage, onNavigate, onClose, open }) {
                   {userProfile.cargo} · {userProfile.setor}
                 </p>
               </div>
-              <button
-                onClick={logout}
-                className="text-slate-400 hover:text-white shrink-0"
-                title="Sair"
-                aria-label="Sair"
-              >
-                <LogOut size={16} />
-              </button>
             </div>
           )}
+          <button
+            onClick={logout}
+            className="inline-flex items-center gap-2 text-xs text-slate-400 hover:text-white"
+            title="Sair"
+          >
+            <LogOut size={15} />
+            Sair
+          </button>
           <p className="flex items-center gap-2 text-xs text-slate-500">
             <Building2 size={14} />
             JPS Steel · v0.1.0
